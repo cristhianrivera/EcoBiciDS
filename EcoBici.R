@@ -11,7 +11,7 @@ library(stringr)
 
 
 
-data <- read.csv(file= "C:/Users/a688291/Downloads/Personal/2017-01.csv",
+data <- read.csv(file= "C:/Users/a688291/Downloads/Personal/ecobici/2017-01.csv",
                  header = TRUE, 
                  sep=",")
 
@@ -109,16 +109,22 @@ data$Fecha_Arribo_correct <- as.Date(data$Fecha_Arribo_correct,"%d/%m/%Y")
 
 
 tripsPerDay <- data %>%
-  group_by(Fecha_Retiro_correct) %>%
+  group_by(Fecha_Retiro_correct,Genero_Usuario) %>%
   summarise(trips= sum(!is.na(Fecha_Retiro_correct)))
 
 
 p <- ggplot(tripsPerDay)+
-  geom_line(aes(x = Fecha_Retiro_correct, y = trips))
+  geom_line(aes(x = Fecha_Retiro_correct, y = trips))+
+  facet_wrap(~Genero_Usuario)
+  theme_minimal()
 
-
+p <- ggplot(data = tripsPerDay, aes(x = Fecha_Retiro_correct, y = trips)) + geom_point()
+p + facet_wrap(~Genero_Usuario)
+  
+str(tripsPerDay)
 ggplotly(p)
 
+summary(data)
 
 
 

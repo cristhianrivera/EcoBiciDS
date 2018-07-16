@@ -8,7 +8,8 @@ library(reshape)
 library(reshape2)
 library(plotly)
 library(stringr)
-
+library(forecast)
+library(xts)
 
 
 data <- read.csv(file= "C:/Users/a688291/Downloads/Personal/ecobici/2017-01.csv",
@@ -112,19 +113,69 @@ tripsPerDay <- data %>%
   group_by(Fecha_Retiro_correct,Genero_Usuario) %>%
   summarise(trips= sum(!is.na(Fecha_Retiro_correct)))
 
-
-p <- ggplot(tripsPerDay)+
-  geom_line(aes(x = Fecha_Retiro_correct, y = trips))+
-  facet_wrap(~Genero_Usuario)
-  theme_minimal()
-
-p <- ggplot(data = tripsPerDay, aes(x = Fecha_Retiro_correct, y = trips)) + geom_point()
-p + facet_wrap(~Genero_Usuario)
+#We can now plot the data, for further analysis let's wrap it by sex
+p <- ggplot(data = tripsPerDay, aes(x = Fecha_Retiro_correct, y = trips)) + 
+  geom_line(group=1) +
+  geom_point()+ 
+  facet_wrap(~Genero_Usuario, ncol=1)
   
-str(tripsPerDay)
 ggplotly(p)
 
-summary(data)
+#autoarima 
+View(tripsPerDay)
+
+ts_M <- tripsPerDay %>%
+  filter(Genero_Usuario == 'M', Fecha_Retiro_correct >= as.Date('2017/01/01'))
+
+ts_F <- tripsPerDay %>%
+  filter(Genero_Usuario == 'F', Fecha_Retiro_correct >= as.Date('2017/01/01'))
+
+ts_M <- xts(ts_M$trips, as.Date(ts_M$Fecha_Retiro_correct))
+ts_F <- xts(ts_F$trips, as.Date(ts_F$Fecha_Retiro_correct))
+
+fit_auto_M <- auto.arima(ts_M)
+fit_auto_F <- auto.arima(ts_F)
+
+print(fit_auto_M)
+print(fit_auto_F)
+
+plot(forecast(fit_auto_M, h = 7))
+plot(forecast(fit_auto_F, h = 7))
+
+
+#We will get to (hopefuly) the same results by analyzing the ACF and PACF
+#as we are going to be looking the ACF and PACF, let's create a function that shows both charts at a glance
+TSAnalysis <- function(ts, lags=10){
+  par(mfrow=c(3, 1))
+  plot.ts(ts,  main = "", xlab = "" )
+  ts <- na.omit(ts)
+  forecast::Acf(ts,lags, main = "", xlab = "")
+  forecast::Pacf(ts,lags, main = "")
+}
+
+TSAnalysis(log(ts_M+1), 20)
+
+hist(ts_M)
+hist(log(ts_M+1))
+
+
+ts_M.1 <- base::diff(ts_M)
+TSAnalysis(ts_M.1, 20)
+
+fit_M <- arima(log(ts_M+1), order = c(1,0,0), seasonal=list(order=c(0,1,0),period = 7))
+print(fit_M)
+TSAnalysis(log(ts_M+1),20)
+
+print(fit_M)
+plot(forecast(fit_M, h=7))
+plot(fit_M$residuals)
+TSAnalysis(fit_M$residuals)
+
+
+qqnorm(residuals(fit_auto_M)); qqline(residuals(fit_auto_M))
+par(mfrow=c(1, 1))
+qqnorm(residuals(fit_M)); qqline(residuals(fit_M))
+
 
 
 

@@ -17,8 +17,11 @@ data <- read.csv(file= "C:/Users/a688291/Downloads/Personal/ecobici/2017-01.csv"
                  sep=",")
 
 #Let's take a look into the data
-head(data)
+View(head(data))
 summary(data)
+
+hist(data$Ciclo_Estacion_Arribo)
+hist(data$Ciclo_Estacion_Retiro)
 
 #we would like to have the dates with a date format. After trying to do so, I got some errors and found
 #that the format was not consistent through all the dataset
@@ -111,7 +114,8 @@ data$Fecha_Arribo_correct <- as.Date(data$Fecha_Arribo_correct,"%d/%m/%Y")
 
 tripsPerDay <- data %>%
   group_by(Fecha_Retiro_correct,Genero_Usuario) %>%
-  summarise(trips= sum(!is.na(Fecha_Retiro_correct)))
+  summarise(trips= sum(!is.na(Fecha_Retiro_correct))) %>%
+  filter(Fecha_Retiro_correct >= as.Date('2017-01-01'))
 
 #We can now plot the data, for further analysis let's wrap it by sex
 p <- ggplot(data = tripsPerDay, aes(x = Fecha_Retiro_correct, y = trips)) + 
@@ -147,36 +151,199 @@ plot(forecast(fit_auto_F, h = 7))
 #as we are going to be looking the ACF and PACF, let's create a function that shows both charts at a glance
 TSAnalysis <- function(ts, lags=10){
   par(mfrow=c(3, 1))
-  plot.ts(ts,  main = "", xlab = "" )
+  plot.ts(ts,  main = "", xlab = "", type = "o")
   ts <- na.omit(ts)
   forecast::Acf(ts,lags, main = "", xlab = "")
   forecast::Pacf(ts,lags, main = "")
 }
 
-TSAnalysis(log(ts_M+1), 20)
+#one of the points I wanted to check was the decision making from the auto.arima machinery.
+#For the "manual" model selection, we must be sure that the model has a constant variance through the 
+#time and it has no trend, although we can deal with that using the I part of an ARIMA model
 
-hist(ts_M)
-hist(log(ts_M+1))
+log_ts_M <- log(ts_M+1)
+
+TSAnalysis(log_ts_M, 20)
+
+log_ts_M.7 <- diff(log_ts_M,7)
+
+#From the ACF we can see some big values on the 7th lag, this suggests to include a 7th order ar
+TSAnalysis(log_ts_M.7, 20)
 
 
-ts_M.1 <- base::diff(ts_M)
-TSAnalysis(ts_M.1, 20)
+(fit_M <- arima(log_ts_M, order = c(2,0,0), seasonal=list(order=c(0,1,0),period = 7)) )
 
-fit_M <- arima(log(ts_M+1), order = c(1,0,0), seasonal=list(order=c(0,1,0),period = 7))
-print(fit_M)
-TSAnalysis(log(ts_M+1),20)
-
-print(fit_M)
-plot(forecast(fit_M, h=7))
+#Let's take a look at the residuals
 plot(fit_M$residuals)
+summary(fit_M$residuals)
+
+#Now, we would expect that the ACF and PACF values show no more correlation over the lags
 TSAnalysis(fit_M$residuals)
-
-
-qqnorm(residuals(fit_auto_M)); qqline(residuals(fit_auto_M))
-par(mfrow=c(1, 1))
+#Finally we should ensure that the residuals come from a normal distribution
 qqnorm(residuals(fit_M)); qqline(residuals(fit_M))
 
+#So far we have selected an ARIMA(2,0,0)(0,1,0)[7] given the ACF and PACF values,
+#then we took a look at the residuals:
+#  no trend
+#  constant variance
+#  normal distributed
+
+
+#Finally, let's produce a forecast for 7 days
+par(mfrow=c(2, 1))
+plot(forecast(fit_M, h=7))
+
+fit_M.forecast <- forecast(fit_M, h=7)
+
+#One of the metrics I have use over the years is the MAPE (mean average percentage error)
+#this tells us how far is our prediction from the actual value of the series
+mape <- function(ori_vl, for_vl){
+  ori <- ori_vl
+  fore <- for_vl
+  nvl<-length(ori)
+  mp <- 0
+  for (i in 1:nvl){
+    mp <- mp + abs((ori[i]-fore[i])/ori[i])
+  }
+  return(100 * mp/nvl)
+}
+
+ori = exp(as.double(fit_M.forecast$x))-1
+fore = exp(as.double(fit_M.forecast$fitted))-1
+mape(ori, fore)
+
+#Finally, this is how it looks
+ts_df <- data.frame( 
+  dt = seq(from= base::as.Date('2017/01/01'), to= base::as.Date('2017/01/31'), by = 1),
+  lnori = as.double(fit_M.forecast$x),
+  lnfore = as.double(fit_M.forecast$fitted),
+  ori = ori,
+  fore = fore )
+
+p <-ggplot(ts_df)+
+  geom_line(aes(x = dt,
+                y = ori))+
+  geom_line(aes(x = dt,
+                y = fore ),
+            col = 'light green')+
+  labs(title ='EcoBici', x = 'date', y ="")+
+  scale_y_continuous(label=comma)+
+  theme_light()
+  
+ggplotly(p)
 
 
 
 
+##################
+#So far the approach to compute a forecast has been fully oriented to ARIMA models and we could answer questions
+#like, how many trips are going to be performed the following days?,
+#how many users by gender are going to use the EcoBici system in the next week?, etc
+#Now what if we would like to know the how many bikes are going to be needed at an specific location 
+#for the following days?
+#Let's change our approach to a Machine Learning technique. 
+
+
+
+
+head(data)
+data_day_station <- data %>%
+  group_by(Fecha_Retiro_correct, Ciclo_Estacion_Retiro) %>%
+  summarise(trips= sum(!is.na(Fecha_Retiro_correct))) %>%
+  filter(Fecha_Retiro_correct >= as.Date('2017-01-01'))
+
+#rpivotTable(data_day_station)
+head(data_day_station)
+
+#The next histogram will show us the distribution of the number of trips per day
+hist(data_day_station$trips,200)
+#Not too much to talk about this, but it could maybe open the discussion about the geographic distribution of 
+#some stations.... for example:
+
+(data_day_station.5 <- data_day_station%>%
+  filter(trips<5)%>%
+  ungroup()%>%
+  summarise(n_ciclo = n_distinct(Ciclo_Estacion_Retiro)))
+
+#Let's continue with the data wrangling, we want to predict one week of trips given 3 weeks.
+#AQUI DEBERÍAS PONER CÓMO VA A RECIBIR LA INFORMACIÓN KERAS
+
+
+
+
+filter(data_day_station, trips<5)
+data_day_station$Fecha_Retiro_correct
+
+#LSTM with keras
+#install.packages("devtools")
+#devtools::install_github("rstudio/keras")
+#install_keras()
+library(keras)
+
+
+# since we are using stateful rnn tsteps can be set to 1
+tsteps <- 1
+batch_size <- 25
+epochs <- 2
+# number of elements ahead that are used to make the prediction
+lahead <- 1
+
+# Generates an absolute cosine time series with the amplitude exponentially decreasing
+# Arguments:
+#   amp: amplitude of the cosine function
+#   period: period of the cosine function
+#   x0: initial x of the time series
+#   xn: final x of the time series
+#   step: step of the time series discretization
+#   k: exponential rate
+gen_cosine_amp <- function(amp = 100, period = 1000, x0 = 0, xn = 50000, step = 1, k = 0.0001) {
+  n <- (xn-x0) * step
+  cos <- array(data = numeric(n), dim = c(n, 1, 1))
+  for (i in 1:length(cos)) {
+    idx <- x0 + i * step
+    cos[[i, 1, 1]] <- amp * cos(2 * pi * idx / period)
+    cos[[i, 1, 1]] <- cos[[i, 1, 1]] * exp(-k * idx)
+  }
+  cos
+}
+
+cat('Generating Data...\n')
+cos <- gen_cosine_amp()
+cat('Input shape:', dim(cos), '\n')
+
+expected_output <- array(data = numeric(length(cos)), dim = c(length(cos), 1))
+for (i in 1:(length(cos) - lahead)) {
+  expected_output[[i, 1]] <- mean(cos[(i + 1):(i + lahead)])
+}
+
+cat('Output shape:', dim(expected_output), '\n')
+
+cat('Creating model:\n')
+model <- keras_model_sequential()
+model %>%
+  layer_lstm(units = 50, input_shape = c(tsteps, 1), batch_size = batch_size,
+             return_sequences = TRUE, stateful = TRUE) %>% 
+  layer_lstm(units = 50, return_sequences = FALSE, stateful = TRUE) %>% 
+  layer_dense(units = 1)
+model %>% compile(loss = 'mse', optimizer = 'rmsprop')
+
+cat('Training\n')
+for (i in 1:epochs) {
+  model %>% fit(cos, expected_output, batch_size = batch_size,
+                epochs = 1, verbose = 1, shuffle = TRUE)
+  
+  model %>% reset_states()
+}
+
+length(cos)
+length(expected_output)
+cat('Predicting\n')
+predicted_output <- model %>% predict(cos, batch_size = batch_size)
+
+cat('Plotting Results\n')
+op <- par(mfrow=c(2,1))
+plot(expected_output, xlab = '')
+title("Expected")
+plot(predicted_output, xlab = '')
+title("Predicted")
+par(op)

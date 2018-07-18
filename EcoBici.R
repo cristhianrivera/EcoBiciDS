@@ -346,10 +346,11 @@ data_day_station <- data %>%
   filter(Fecha_Retiro >= as.Date('2017-01-01'))
 
 ToLSTM <- data_day_station%>%
-  filter(Ciclo_Estacion_Retiro==1)%>%
-  mutate(weekNumber = strftime(Fecha_Retiro))
+  mutate(weekNumber = format(as.Date(Fecha_Retiro),"%W"))
 
-View(head(filter(data_day_station,Ciclo_Estacion_Retiro==1), 100))
+
+format(as.Date("2014-03-16"), "%w")
+View(head(ToLSTM))
 
 
 

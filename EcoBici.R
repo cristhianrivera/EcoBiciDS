@@ -268,6 +268,127 @@ hist(data_day_station$trips,200)
 #Let's continue with the data wrangling, we want to predict one week of trips given 3 weeks.
 #AQUI DEBERÍAS PONER CÓMO VA A RECIBIR LA INFORMACIÓN KERAS
 
+#we need to create an array with tha shape: (#Stations, #days, #trips)
+
+
+
+data_201701 <- read.csv(file= "C:/Users/a688291/Downloads/Personal/ecobici/2017-01.csv",
+                 header = TRUE, 
+                 sep=",")
+
+data_201702 <- read.csv(file= "C:/Users/a688291/Downloads/Personal/ecobici/2017-02.csv",
+                        header = TRUE, 
+                        sep=",")
+
+data_201703 <- read.csv(file= "C:/Users/a688291/Downloads/Personal/ecobici/2017-03.csv",
+                        header = TRUE, 
+                        sep=",")
+
+
+data_201701 <- data_201701 %>%
+  mutate(Fecha_Retiro = case_when(
+    Fecha_Retiro == '01/02/2017' ~ '02/01/2017',
+    Fecha_Retiro == '01/03/2017' ~ '03/01/2017',
+    Fecha_Retiro == '01/04/2017' ~ '04/01/2017',
+    Fecha_Retiro == '01/05/2017' ~ '05/01/2017',
+    Fecha_Retiro == '01/06/2017' ~ '06/01/2017',
+    Fecha_Retiro == '01/07/2017' ~ '07/01/2017',
+    Fecha_Retiro == '01/08/2017' ~ '08/01/2017',
+    Fecha_Retiro == '01/09/2017' ~ '09/01/2017',
+    Fecha_Retiro == '01/10/2017' ~ '10/01/2017',
+    Fecha_Retiro == '01/11/2017' ~ '11/01/2017',
+    Fecha_Retiro == '01/12/2017' ~ '12/01/2017',
+    TRUE ~ as.character(data_201701$Fecha_Retiro )
+  )) %>%
+  mutate(Fecha_Arribo = case_when(
+    Fecha_Arribo == '01/02/2017' ~ '02/01/2017',
+    Fecha_Arribo == '01/03/2017' ~ '03/01/2017',
+    Fecha_Arribo == '01/04/2017' ~ '04/01/2017',
+    Fecha_Arribo == '01/05/2017' ~ '05/01/2017',
+    Fecha_Arribo == '01/06/2017' ~ '06/01/2017',
+    Fecha_Arribo == '01/07/2017' ~ '07/01/2017',
+    Fecha_Arribo == '01/08/2017' ~ '08/01/2017',
+    Fecha_Arribo == '01/09/2017' ~ '09/01/2017',
+    Fecha_Arribo == '01/10/2017' ~ '10/01/2017',
+    Fecha_Arribo == '01/11/2017' ~ '11/01/2017',
+    Fecha_Arribo == '01/12/2017' ~ '12/01/2017',
+    TRUE ~ as.character(data_201701$Fecha_Arribo )
+  ))
+
+
+
+data_201701 <- data_201701 %>%
+  select(-X)
+
+data <- rbind(data_201701,data_201702)
+data <- rbind(data,data_201703)
+
+
+data$Fecha_Retiro <- as.Date(data$Fecha_Retiro,"%d/%m/%Y")
+data$Fecha_Arribo <- as.Date(data$Fecha_Arribo,"%d/%m/%Y")
+
+#with more information this is how the data looks like:
+data_day <- data %>%
+  group_by(Fecha_Retiro) %>%
+  summarise(trips= sum(!is.na(Fecha_Retiro))) %>%
+  filter(Fecha_Retiro >= as.Date('2017-01-01'))
+
+p <- ggplot(data = data_day, aes(x = Fecha_Retiro, y = trips)) + 
+  geom_line(group=1) +
+  geom_point()
+ggplotly(p)
+
+#DECRIPCIÓN DE CÓMO VAS A TRANSFORMAR LA INFORMACIÓN
+
+data_day_station <- data %>%
+  group_by(Fecha_Retiro, Ciclo_Estacion_Retiro) %>%
+  summarise(trips= sum(!is.na(Fecha_Retiro))) %>%
+  filter(Fecha_Retiro >= as.Date('2017-01-01'))
+
+ToLSTM <- data_day_station%>%
+  filter(Ciclo_Estacion_Retiro==1)%>%
+  mutate(weekNumber = strftime(Fecha_Retiro))
+
+View(head(filter(data_day_station,Ciclo_Estacion_Retiro==1), 100))
+
+
+
+tripsPerDay <- data %>%
+  group_by(Fecha_Retiro,Genero_Usuario) %>%
+  summarise(trips= sum(!is.na(Fecha_Retiro))) %>%
+  filter(Fecha_Retiro >= as.Date('2017-01-01'))
+
+p <- ggplot(data = tripsPerDay, aes(x = Fecha_Retiro, y = trips)) + 
+  geom_line(group=1) +
+  geom_point()+ 
+  facet_wrap(~Genero_Usuario, ncol=1)
+
+ggplotly(p)
+
+
+
+data_dates = data_day_station %>% 
+  distinct(Fecha_Retiro)
+
+
+
+
+
+
+
+
+arr_data <- array(data = numeric(n), dim = c(n, 1, 1))
+
+(n_stations <- data_day_station%>%
+    ungroup()%>%
+    summarise(n_ciclo = n_distinct(Ciclo_Estacion_Retiro)))
+
+
+numeric(3)
+
+data_day_station
+
+
 
 
 
@@ -281,6 +402,14 @@ data_day_station$Fecha_Retiro_correct
 library(keras)
 
 
+imdb <- dataset_imdb(num_words = 20000)
+x_train <- imdb$train$x
+y_train <- imdb$train$y
+x_test <- imdb$test$x
+y_test <- imdb$test$y
+
+x_train <- pad_sequences(x_train, maxlen = 80)
+dim(x_train)
 # since we are using stateful rnn tsteps can be set to 1
 tsteps <- 1
 batch_size <- 25
@@ -330,10 +459,12 @@ model %>% compile(loss = 'mse', optimizer = 'rmsprop')
 cat('Training\n')
 for (i in 1:epochs) {
   model %>% fit(cos, expected_output, batch_size = batch_size,
-                epochs = 1, verbose = 1, shuffle = TRUE)
+                epochs = 2, verbose = 1, shuffle = TRUE)
   
   model %>% reset_states()
 }
+
+
 
 length(cos)
 length(expected_output)

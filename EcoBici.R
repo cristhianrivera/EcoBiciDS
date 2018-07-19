@@ -343,51 +343,99 @@ ggplotly(p)
 data_day_station <- data %>%
   group_by(Fecha_Retiro, Ciclo_Estacion_Retiro) %>%
   summarise(trips= sum(!is.na(Fecha_Retiro))) %>%
-  filter(Fecha_Retiro >= as.Date('2017-01-01'))
-
-ToLSTM <- data_day_station%>%
-  mutate(weekNumber = format(as.Date(Fecha_Retiro),"%W"))
-
-
-format(as.Date("2014-03-16"), "%w")
-View(head(ToLSTM))
+  filter(Fecha_Retiro >= as.Date('2017-01-01')) %>%
+  filter(Fecha_Retiro <= as.Date('2017-03-25'))
 
 
 
-tripsPerDay <- data %>%
-  group_by(Fecha_Retiro,Genero_Usuario) %>%
-  summarise(trips= sum(!is.na(Fecha_Retiro))) %>%
-  filter(Fecha_Retiro >= as.Date('2017-01-01'))
-
-p <- ggplot(data = tripsPerDay, aes(x = Fecha_Retiro, y = trips)) + 
-  geom_line(group=1) +
-  geom_point()+ 
-  facet_wrap(~Genero_Usuario, ncol=1)
-
-ggplotly(p)
+ToLSTM <- data_day_station %>%
+  mutate(weekday = format(as.Date(Fecha_Retiro),"%u")) %>%
+  mutate(monthday = day(as.Date(Fecha_Retiro))) %>%
+  mutate(weeknumber = strftime(as.Date(Fecha_Retiro),"%V"))%>%
+  filter(weeknumber != "52")
+  
 
 
 
-data_dates = data_day_station %>% 
-  distinct(Fecha_Retiro)
-
-
-
-
-
-
-
-
-arr_data <- array(data = numeric(n), dim = c(n, 1, 1))
-
-(n_stations <- data_day_station%>%
+#Number of stations?
+(n_stations <- ToLSTM%>%
     ungroup()%>%
     summarise(n_ciclo = n_distinct(Ciclo_Estacion_Retiro)))
 
+#Number of stations?
+(n_days <- ToLSTM%>%
+    ungroup()%>%
+    summarise(n_ciclo = n_distinct(Fecha_Retiro)))
 
-numeric(3)
+#One way we can build 28 data points from  12 total weeks is by selecting groups of 28 consecutive days
+#and we can get up to 77 groups of 28 datapoints out of 12 weeks (84 days)
+#Our data will have the shape (77X448,1,28) 
 
-data_day_station
+(n <-77*448)
+(days <- 28)
+data_array <- array(data = numeric(n), dim = c(n, 1, days))
+#Dictionary of stations
+(stations <- ToLSTM%>%
+    ungroup()%>%
+    distinct(Ciclo_Estacion_Retiro))
+
+#Dictionary of dates
+(dates_retiro <- ToLSTM%>%
+    ungroup()%>%
+    distinct(Fecha_Retiro))
+
+rowN <- 0
+for(i_s in 1:448){
+#for(i_s in 1:2){
+  #i_s <- 1 ########
+  loop_station <- as.numeric(stations[i_s,1])
+  data_station <- ToLSTM %>%
+    filter(Ciclo_Estacion_Retiro == loop_station) %>%
+    select(Fecha_Retiro, trips) %>%
+    arrange(Fecha_Retiro)
+  for(k_w in 1:56){
+    #k_w <- 1 ########
+    rowN <- rowN + 1
+    dq <- dates_retiro$Fecha_Retiro[k_w]
+    for(j in 1:days){
+      #j <- 1 ########
+      week_d <- as.Date(dq) + (j-1)
+      data_point <- data_station %>%
+        ungroup()%>%
+        filter(Fecha_Retiro == as.Date(week_d)) %>%
+        select(trips)
+      data_point <- as.numeric(data_point)
+      data_point <- ifelse(!is.na(data_point), data_point, 0)
+      data_array[[rowN , 1 , j ]] <- data_point
+      #print(paste(rowN , week_d, as.character(t), loop_station))
+    }
+  }
+}
+
+  
+
+
+
+mt_mean <- ToLSTM %>% 
+  ungroup() %>%
+  count(Ciclo_Estacion_Retiro) %>%
+  rename(avg_count = n)
+
+(mt_mean <- ToLSTM %>%
+  ungroup()%>%
+  group_by(weeknumber)%>%
+  summarise(count = n_distinct(Ciclo_Estacion_Retiro) ))
+  
+group_by(ID) %>%
+  summarise(count = n_distinct(color))
+
+View(mt_mean)
+
+
+
+
+
+
 
 
 

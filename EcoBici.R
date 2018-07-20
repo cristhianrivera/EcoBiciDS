@@ -414,15 +414,36 @@ for(i_s in 1:448){
 }
 
 
-x_train <- data_array[ , 1:21, 1 ]
-x_train <- array_reshape(x = x_train, dim = list(34496, 21, 1))
-y_train <- data_array[ , 22:28, 1 ]
+
+#Split into test and training data
+
+
+set.seed(12345)
+nt <- floor(dim(data_array)[1]*0.8)
+train<-sample(dim(data_array)[1], nt )
+
+x_train <- data_array[ train , 1:21, 1 ]
+x_train <- array_reshape(x = x_train, dim = list(nt, 21, 1))
+y_train <- data_array[ train , 22:28, 1 ]
+
+x_test <- data_array[ -train , 1:21, 1 ]
+x_test <- array_reshape(x = x_test, dim = list(dim(data_array)[1]-nt, 21, 1))
+y_test <- data_array[ -train, 22:28, 1 ]
+
+27596/16
+
+divisors <- function(x){
+  
+}
 
 dim(x_train)
 dim(y_train)
 
+dim(x_test)
+dim(y_test)
+
 batch_size <- 44
-epochs <- 20
+epochs <- 5
 
 cat('Creating model:\n')
 model <- keras_model_sequential()

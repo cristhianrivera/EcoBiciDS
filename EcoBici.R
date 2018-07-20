@@ -338,6 +338,7 @@ p <- ggplot(data = data_day, aes(x = Fecha_Retiro, y = trips)) +
   geom_point()
 ggplotly(p)
 
+
 #DECRIPCIÓN DE CÓMO VAS A TRANSFORMAR LA INFORMACIÓN
 
 data_day_station <- data %>%
@@ -369,11 +370,12 @@ ToLSTM <- data_day_station %>%
 
 #One way we can build 28 data points from  12 total weeks is by selecting groups of 28 consecutive days
 #and we can get up to 77 groups of 28 datapoints out of 12 weeks (84 days)
-#Our data will have the shape (77X448,1,28) 
-
+#Our data will have the shape (77X448,    28,         1    )
+#-----------------------------(samples, timesteps, features)
+library(keras)
 (n <-77*448)
 (days <- 28)
-data_array <- array(data = numeric(n), dim = c(n, 1, days))
+data_array <- array(data = numeric(n), dim = c(n, days, 1))
 #Dictionary of stations
 (stations <- ToLSTM%>%
     ungroup()%>%
@@ -384,21 +386,21 @@ data_array <- array(data = numeric(n), dim = c(n, 1, days))
     ungroup()%>%
     distinct(Fecha_Retiro))
 
+#Fill the array with data
 rowN <- 0
 for(i_s in 1:448){
-#for(i_s in 1:2){
-  #i_s <- 1 ########
+  print(i_s)
   loop_station <- as.numeric(stations[i_s,1])
   data_station <- ToLSTM %>%
     filter(Ciclo_Estacion_Retiro == loop_station) %>%
     select(Fecha_Retiro, trips) %>%
     arrange(Fecha_Retiro)
+  
   for(k_w in 1:56){
-    #k_w <- 1 ########
     rowN <- rowN + 1
     dq <- dates_retiro$Fecha_Retiro[k_w]
+    
     for(j in 1:days){
-      #j <- 1 ########
       week_d <- as.Date(dq) + (j-1)
       data_point <- data_station %>%
         ungroup()%>%
@@ -406,43 +408,70 @@ for(i_s in 1:448){
         select(trips)
       data_point <- as.numeric(data_point)
       data_point <- ifelse(!is.na(data_point), data_point, 0)
-      data_array[[rowN , 1 , j ]] <- data_point
-      #print(paste(rowN , week_d, as.character(t), loop_station))
+      data_array[[rowN , j , 1 ]] <- data_point
     }
   }
 }
 
-  
+
+x_train <- data_array[ , 1:21, 1 ]
+x_train <- array_reshape(x = x_train, dim = list(34496, 21, 1))
+y_train <- data_array[ , 22:28, 1 ]
+
+dim(x_train)
+dim(y_train)
+
+batch_size <- 44
+epochs <- 20
+
+cat('Creating model:\n')
+model <- keras_model_sequential()
+model %>%
+  layer_lstm(units = 50, input_shape = c( 21, 1), batch_size = batch_size,
+             return_sequences = TRUE, stateful = TRUE) %>% 
+  layer_lstm(units = 50, return_sequences = FALSE, stateful = TRUE) %>% 
+  layer_dense(units = 7)
+model %>% compile(loss = 'mse', optimizer = 'rmsprop')
+
+cat('Training\n')
+for (i in 1:epochs) {
+  print(paste("Real epoch: ", as.character(i)))
+  model %>% fit(x_train, y_train, batch_size = batch_size,
+                epochs = 1, verbose = 1, shuffle = TRUE)
+  model %>% reset_states()
+}
 
 
 
-mt_mean <- ToLSTM %>% 
-  ungroup() %>%
-  count(Ciclo_Estacion_Retiro) %>%
-  rename(avg_count = n)
-
-(mt_mean <- ToLSTM %>%
-  ungroup()%>%
-  group_by(weeknumber)%>%
-  summarise(count = n_distinct(Ciclo_Estacion_Retiro) ))
-  
-group_by(ID) %>%
-  summarise(count = n_distinct(color))
-
-View(mt_mean)
 
 
 
+length(cos)
+length(expected_output)
+cat('Predicting\n')
+predicted_output <- model %>% predict(cos, batch_size = batch_size)
+
+cat('Plotting Results\n')
+op <- par(mfrow=c(2,1))
+plot(expected_output, xlab = '')
+title("Expected")
+plot(predicted_output, xlab = '')
+title("Predicted")
+par(op)
 
 
 
 
+# Your train matrix should be 3-dimensional (samples, timesteps, features). Then you have to use 2nd and 3rd dimensions for input_shape:
+#   
+#   input_shape = c(dim(X_train_scaled)[2], dim(X_train_scaled)[3])
+# Also, number of rows in your dataset is samples, not timesteps. You can read more about samples, timesteps and features here.
 
 
 
 
-filter(data_day_station, trips<5)
-data_day_station$Fecha_Retiro_correct
+
+
 
 #LSTM with keras
 #install.packages("devtools")

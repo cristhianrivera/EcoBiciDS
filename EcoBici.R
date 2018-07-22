@@ -10,6 +10,7 @@ library(plotly)
 library(stringr)
 library(forecast)
 library(xts)
+library(numbers)
 
 
 data <- read.csv(file= "C:/Users/a688291/Downloads/Personal/ecobici/2017-01.csv",
@@ -266,21 +267,21 @@ hist(data_day_station$trips,200)
   summarise(n_ciclo = n_distinct(Ciclo_Estacion_Retiro)))
 
 #Let's continue with the data wrangling, we want to predict one week of trips given 3 weeks.
-#AQUI DEBERÍAS PONER CÓMO VA A RECIBIR LA INFORMACIÓN KERAS
+#AQUI DEBER?AS PONER C?MO VA A RECIBIR LA INFORMACI?N KERAS
 
 #we need to create an array with tha shape: (#Stations, #days, #trips)
 
 
 
-data_201701 <- read.csv(file= "C:/Users/a688291/Downloads/Personal/ecobici/2017-01.csv",
+data_201701 <- read.csv(file= "/Users/Cristhian/Documents/EcoBici/ecobici/2017-01.csv",
                  header = TRUE, 
                  sep=",")
 
-data_201702 <- read.csv(file= "C:/Users/a688291/Downloads/Personal/ecobici/2017-02.csv",
+data_201702 <- read.csv(file= "/Users/Cristhian/Documents/EcoBici/ecobici/2017-02.csv",
                         header = TRUE, 
                         sep=",")
 
-data_201703 <- read.csv(file= "C:/Users/a688291/Downloads/Personal/ecobici/2017-03.csv",
+data_201703 <- read.csv(file= "/Users/Cristhian/Documents/EcoBici/ecobici/2017-03.csv",
                         header = TRUE, 
                         sep=",")
 
@@ -339,7 +340,7 @@ p <- ggplot(data = data_day, aes(x = Fecha_Retiro, y = trips)) +
 ggplotly(p)
 
 
-#DECRIPCIÓN DE CÓMO VAS A TRANSFORMAR LA INFORMACIÓN
+#DECRIPCI?N DE C?MO VAS A TRANSFORMAR LA INFORMACI?N
 
 data_day_station <- data %>%
   group_by(Fecha_Retiro, Ciclo_Estacion_Retiro) %>%
@@ -375,7 +376,7 @@ ToLSTM <- data_day_station %>%
 library(keras)
 (n <-77*448)
 (days <- 28)
-data_array <- array(data = numeric(n), dim = c(n, days, 1))
+data_array <- array(data = numeric(n), dim = c(n, days, 2))
 #Dictionary of stations
 (stations <- ToLSTM%>%
     ungroup()%>%
@@ -393,7 +394,7 @@ for(i_s in 1:448){
   loop_station <- as.numeric(stations[i_s,1])
   data_station <- ToLSTM %>%
     filter(Ciclo_Estacion_Retiro == loop_station) %>%
-    select(Fecha_Retiro, trips) %>%
+    select(Fecha_Retiro, trips, weekday) %>%
     arrange(Fecha_Retiro)
   
   for(k_w in 1:56){
@@ -406,9 +407,14 @@ for(i_s in 1:448){
         ungroup()%>%
         filter(Fecha_Retiro == as.Date(week_d)) %>%
         select(trips)
+      data_day_point <- data_station %>%
+        ungroup()%>%
+        filter(Fecha_Retiro == as.Date(week_d)) %>%
+        select(weekday)
       data_point <- as.numeric(data_point)
       data_point <- ifelse(!is.na(data_point), data_point, 0)
       data_array[[rowN , j , 1 ]] <- data_point
+      data_array[[rowN , j , 2 ]] <- data_point
     }
   }
 }
@@ -419,68 +425,79 @@ for(i_s in 1:448){
 
 
 set.seed(12345)
-nt <- floor(dim(data_array)[1]*0.8)
+nt <- floor(dim(data_array)[1]*0.75)
 train<-sample(dim(data_array)[1], nt )
 
-x_train <- data_array[ train , 1:21, 1 ]
-x_train <- array_reshape(x = x_train, dim = list(nt, 21, 1))
-y_train <- data_array[ train , 22:28, 1 ]
+x_train <- data_array[ train , 1:21,  ]
+x_train <- array_reshape(x = x_train, dim = list(nt, 21, 2))
+y_train <- data_array[ train , 22:28, 1]
 
-x_test <- data_array[ -train , 1:21, 1 ]
-x_test <- array_reshape(x = x_test, dim = list(dim(data_array)[1]-nt, 21, 1))
-y_test <- data_array[ -train, 22:28, 1 ]
+x_test <- data_array[ -train , 1:21,  ]
+x_test <- array_reshape(x = x_test, dim = list(dim(data_array)[1]-nt, 21, 2) )
+y_test <- data_array[ -train, 22:28, 1]
 
-27596/16
-
-divisors <- function(x){
-  
-}
 
 dim(x_train)
 dim(y_train)
 
 dim(x_test)
 dim(y_test)
-
+#divisors(25872)
 batch_size <- 44
-epochs <- 5
+epochs <- 100
 
 cat('Creating model:\n')
 model <- keras_model_sequential()
 model %>%
-  layer_lstm(units = 50, input_shape = c( 21, 1), batch_size = batch_size,
+  layer_lstm(units = 50, input_shape = c( 21, 2), batch_size = batch_size,
              return_sequences = TRUE, stateful = TRUE) %>% 
   layer_lstm(units = 50, return_sequences = FALSE, stateful = TRUE) %>% 
   layer_dense(units = 7)
-model %>% compile(loss = 'mse', optimizer = 'rmsprop')
+summary(model)
 
-cat('Training\n')
-for (i in 1:epochs) {
-  print(paste("Real epoch: ", as.character(i)))
-  model %>% fit(x_train, y_train, batch_size = batch_size,
-                epochs = 1, verbose = 1, shuffle = TRUE)
-  model %>% reset_states()
-}
+rmsprop <- optimizer_rmsprop(lr=0.001)
 
+model %>% compile(loss = 'mse', rmsprop )
+history <- model %>% fit(
+  x_train, y_train, 
+  batch_size = batch_size,
+  epochs = epochs, 
+  verbose = 1, 
+  validation_data = list(x_test, y_test),
+  shuffle = TRUE)
 
+plot(history)
 
+#Prediction and compasiron with the actual values
+predicted_output <- model %>% 
+  predict(x_train, batch_size = batch_size)
 
+dim(x_test)
+dim(y_test)
+dim(predicted_output)
 
+#loop to check how the predicted value looks like
+for(rtc in 1:200){
+  plotfun <- as.data.frame(
+    cbind(ts = seq(from = 1, to= 7, by= 1),
+          pred = predicted_output[rtc*44,], 
+          real = y_train[rtc*44,]))
+  p <- ggplot(plotfun)+
+    geom_line(aes(x = ts, y = real), color = 'blue')+
+    geom_line(aes(x = ts, y = pred), color = 'red')
+  print(p)
+  Sys.sleep(2.2)}
 
-length(cos)
-length(expected_output)
-cat('Predicting\n')
-predicted_output <- model %>% predict(cos, batch_size = batch_size)
-
-cat('Plotting Results\n')
-op <- par(mfrow=c(2,1))
-plot(expected_output, xlab = '')
-title("Expected")
-plot(predicted_output, xlab = '')
-title("Predicted")
-par(op)
-
-
+# model %>% compile(loss = 'mse', optimizer = 'rmsprop')
+# 
+# cat('Training\n')
+# for (i in 1:epochs) {
+#   print(paste("Real epoch: ", as.character(i)))
+#   model %>% fit(x_train, y_train, batch_size = batch_size,
+#                 epochs = 1, verbose = 1, shuffle = TRUE)
+#   plot(model)
+#   model %>% reset_states()
+# }
 
 
 # Your train matrix should be 3-dimensional (samples, timesteps, features). Then you have to use 2nd and 3rd dimensions for input_shape:
@@ -553,6 +570,7 @@ model %>%
              return_sequences = TRUE, stateful = TRUE) %>% 
   layer_lstm(units = 50, return_sequences = FALSE, stateful = TRUE) %>% 
   layer_dense(units = 1)
+
 model %>% compile(loss = 'mse', optimizer = 'rmsprop')
 
 cat('Training\n')

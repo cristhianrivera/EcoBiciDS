@@ -271,17 +271,19 @@ hist(data_day_station$trips,200)
 
 #we need to create an array with tha shape: (#Stations, #days, #trips)
 
+path = 'C:/Users/a688291/Downloads/Personal/ecobici/'
+#path = '/Users/Cristhian/Documents/EcoBici/ecobici/'
 
 
-data_201701 <- read.csv(file= "/Users/Cristhian/Documents/EcoBici/ecobici/2017-01.csv",
+data_201701 <- read.csv(file = paste(path,"2017-01.csv", sep = ""),
                  header = TRUE, 
                  sep=",")
 
-data_201702 <- read.csv(file= "/Users/Cristhian/Documents/EcoBici/ecobici/2017-02.csv",
+data_201702 <- read.csv(file= paste(path,"2017-02.csv", sep = ""),
                         header = TRUE, 
                         sep=",")
 
-data_201703 <- read.csv(file= "/Users/Cristhian/Documents/EcoBici/ecobici/2017-03.csv",
+data_201703 <- read.csv(file= paste(path,"2017-03.csv", sep = ""),
                         header = TRUE, 
                         sep=",")
 
@@ -337,7 +339,7 @@ data_day <- data %>%
 p <- ggplot(data = data_day, aes(x = Fecha_Retiro, y = trips)) + 
   geom_line(group=1) +
   geom_point()
-ggplotly(p)
+print(p)
 
 
 #DECRIPCI?N DE C?MO VAS A TRANSFORMAR LA INFORMACI?N
@@ -385,39 +387,82 @@ data_array <- array(data = numeric(n), dim = c(n, days, 2))
 #Dictionary of dates
 (dates_retiro <- ToLSTM%>%
     ungroup()%>%
-    distinct(Fecha_Retiro))
+    distinct(Fecha_Retiro)%>%
+    mutate(pivot_wk = format(as.Date(Fecha_Retiro),"%u")))
 
 #Fill the array with data
+# rowN <- 0
+# for(i_s in 1:448){
+#   print(i_s)
+#   loop_station <- as.numeric(stations[i_s,1])
+#   data_station <- ToLSTM %>%
+#     filter(Ciclo_Estacion_Retiro == loop_station) %>%
+#     select(Fecha_Retiro, trips, weekday) %>%
+#     arrange(Fecha_Retiro)
+#   
+#   for(k_w in 1:56){
+#     rowN <- rowN + 1
+#     dq <- dates_retiro$Fecha_Retiro[k_w]
+#     
+#     for(j in 1:days){
+#       week_d <- as.Date(dq) + (j-1)
+#       data_point <- data_station %>%
+#         ungroup()%>%
+#         filter(Fecha_Retiro == as.Date(week_d)) %>%
+#         select(trips)
+#       data_day_point <- data_station %>%
+#         ungroup()%>%
+#         filter(Fecha_Retiro == as.Date(week_d)) %>%
+#         select(weekday)
+#       data_point <- as.numeric(data_point)
+#       data_point <- ifelse(!is.na(data_point), data_point, 0)
+#       data_array[[rowN , j , 1 ]] <- data_point
+#       data_array[[rowN , j , 2 ]] <- data_point
+#     }
+#   }
+# }
+
+##########################################################
+##########################################################
+
 rowN <- 0
 for(i_s in 1:448){
+  # i_s <- 444 ########
   print(i_s)
   loop_station <- as.numeric(stations[i_s,1])
+  
   data_station <- ToLSTM %>%
     filter(Ciclo_Estacion_Retiro == loop_station) %>%
     select(Fecha_Retiro, trips, weekday) %>%
     arrange(Fecha_Retiro)
   
+  dtToArray <- dates_retiro %>% 
+    left_join(data_station, by = 'Fecha_Retiro' )
+    
+  dtToArray <- dtToArray %>%
+    mutate(trips = ifelse(!is.na(trips), trips, 0),
+           weekday = ifelse(!is.na(weekday), weekday, pivot_wk))%>%
+    select(Fecha_Retiro, trips, weekday)
+  
   for(k_w in 1:56){
+    # k_w <- 1 ########
     rowN <- rowN + 1
     dq <- dates_retiro$Fecha_Retiro[k_w]
+    dt_from <- as.Date(dq)
+    dt_to   <- as.Date(dq) + 27
+    data_point <- dtToArray %>%
+      ungroup()%>%
+      filter(Fecha_Retiro >= as.Date(dt_from) & Fecha_Retiro <= as.Date(dt_to)) %>%
+      select(trips, weekday)
     
-    for(j in 1:days){
-      week_d <- as.Date(dq) + (j-1)
-      data_point <- data_station %>%
-        ungroup()%>%
-        filter(Fecha_Retiro == as.Date(week_d)) %>%
-        select(trips)
-      data_day_point <- data_station %>%
-        ungroup()%>%
-        filter(Fecha_Retiro == as.Date(week_d)) %>%
-        select(weekday)
-      data_point <- as.numeric(data_point)
-      data_point <- ifelse(!is.na(data_point), data_point, 0)
-      data_array[[rowN , j , 1 ]] <- data_point
-      data_array[[rowN , j , 2 ]] <- data_point
-    }
+    data_array[rowN ,  , 1 ] <- dplyr::pull(data_point,trips)
+    data_array[rowN ,  , 2 ] <- dplyr::pull(data_point,weekday)
   }
 }
+
+
+##########################################################
+##########################################################
 
 
 
@@ -451,11 +496,12 @@ model <- keras_model_sequential()
 model %>%
   layer_lstm(units = 50, input_shape = c( 21, 2), batch_size = batch_size,
              return_sequences = TRUE, stateful = TRUE) %>% 
+  layer_dropout(rate = 0.5) %>%
   layer_lstm(units = 50, return_sequences = FALSE, stateful = TRUE) %>% 
   layer_dense(units = 7)
 summary(model)
 
-rmsprop <- optimizer_rmsprop(lr=0.001)
+rmsprop <- optimizer_rmsprop(lr=0.003)
 
 model %>% compile(loss = 'mse', rmsprop )
 history <- model %>% fit(
@@ -470,21 +516,28 @@ plot(history)
 
 #Prediction and compasiron with the actual values
 predicted_output <- model %>% 
-  predict(x_train, batch_size = batch_size)
+  predict(x_test, batch_size = batch_size)
 
 dim(x_test)
 dim(y_test)
 dim(predicted_output)
 
 #loop to check how the predicted value looks like
-for(rtc in 1:200){
+for(rtc in 1:20){
+  #rtc<-5
   plotfun <- as.data.frame(
     cbind(ts = seq(from = 1, to= 7, by= 1),
           pred = predicted_output[rtc*44,], 
-          real = y_train[rtc*44,]))
-  p <- ggplot(plotfun)+
-    geom_line(aes(x = ts, y = real), color = 'blue')+
-    geom_line(aes(x = ts, y = pred), color = 'red')
+          real = as.numeric(y_test[rtc*44,]) ))
+  
+  plotfun <- reshape2::melt(plotfun, id="ts")
+  
+  p <- ggplot(data = plotfun,
+         aes(x = ts, 
+             y = value, 
+             colour = variable)) +
+    expand_limits(y=c(0,300))+
+    geom_line()
   print(p)
   Sys.sleep(2.2)}
 
@@ -507,91 +560,3 @@ for(rtc in 1:200){
 
 
 
-
-
-
-
-#LSTM with keras
-#install.packages("devtools")
-#devtools::install_github("rstudio/keras")
-#install_keras()
-library(keras)
-
-
-imdb <- dataset_imdb(num_words = 20000)
-x_train <- imdb$train$x
-y_train <- imdb$train$y
-x_test <- imdb$test$x
-y_test <- imdb$test$y
-
-x_train <- pad_sequences(x_train, maxlen = 80)
-dim(x_train)
-# since we are using stateful rnn tsteps can be set to 1
-tsteps <- 1
-batch_size <- 25
-epochs <- 2
-# number of elements ahead that are used to make the prediction
-lahead <- 1
-
-# Generates an absolute cosine time series with the amplitude exponentially decreasing
-# Arguments:
-#   amp: amplitude of the cosine function
-#   period: period of the cosine function
-#   x0: initial x of the time series
-#   xn: final x of the time series
-#   step: step of the time series discretization
-#   k: exponential rate
-gen_cosine_amp <- function(amp = 100, period = 1000, x0 = 0, xn = 50000, step = 1, k = 0.0001) {
-  n <- (xn-x0) * step
-  cos <- array(data = numeric(n), dim = c(n, 1, 1))
-  for (i in 1:length(cos)) {
-    idx <- x0 + i * step
-    cos[[i, 1, 1]] <- amp * cos(2 * pi * idx / period)
-    cos[[i, 1, 1]] <- cos[[i, 1, 1]] * exp(-k * idx)
-  }
-  cos
-}
-
-cat('Generating Data...\n')
-cos <- gen_cosine_amp()
-cat('Input shape:', dim(cos), '\n')
-
-expected_output <- array(data = numeric(length(cos)), dim = c(length(cos), 1))
-for (i in 1:(length(cos) - lahead)) {
-  expected_output[[i, 1]] <- mean(cos[(i + 1):(i + lahead)])
-}
-
-cat('Output shape:', dim(expected_output), '\n')
-
-cat('Creating model:\n')
-model <- keras_model_sequential()
-model %>%
-  layer_lstm(units = 50, input_shape = c(tsteps, 1), batch_size = batch_size,
-             return_sequences = TRUE, stateful = TRUE) %>% 
-  layer_lstm(units = 50, return_sequences = FALSE, stateful = TRUE) %>% 
-  layer_dense(units = 1)
-
-model %>% compile(loss = 'mse', optimizer = 'rmsprop')
-
-cat('Training\n')
-for (i in 1:epochs) {
-  model %>% fit(cos, expected_output, batch_size = batch_size,
-                epochs = 2, verbose = 1, shuffle = TRUE)
-  
-  model %>% reset_states()
-}
-
-
-
-length(cos)
-length(expected_output)
-cat('Predicting\n')
-predicted_output <- model %>% predict(cos, batch_size = batch_size)
-
-cat('Plotting Results\n')
-op <- par(mfrow=c(2,1))
-plot(expected_output, xlab = '')
-title("Expected")
-plot(predicted_output, xlab = '')
-title("Predicted")
-par(op)

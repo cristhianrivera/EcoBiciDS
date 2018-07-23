@@ -20,10 +20,13 @@ library(forecast)
 library(xts)
 library(numbers)
 
-path = 'C:/Users/a688291/Downloads/Personal/ecobici/'
-#path = '/Users/Cristhian/Documents/EcoBici/ecobici/'
+#path = 'C:/Users/a688291/Downloads/Personal/ecobici/'
+path = '/Users/Cristhian/Documents/EcoBici/ecobici/'
+```
 
 
+Let's start by readind the data and correcting some date formats.
+```{r}
 data_201701 <- read.csv(file = paste(path,"2017-01.csv", sep = ""),
                  header = TRUE, 
                  sep=",")

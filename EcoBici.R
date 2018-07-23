@@ -271,8 +271,8 @@ hist(data_day_station$trips,200)
 
 #we need to create an array with tha shape: (#Stations, #days, #trips)
 
-path = 'C:/Users/a688291/Downloads/Personal/ecobici/'
-#path = '/Users/Cristhian/Documents/EcoBici/ecobici/'
+#path = 'C:/Users/a688291/Downloads/Personal/ecobici/'
+path = '/Users/Cristhian/Documents/EcoBici/ecobici/'
 
 
 data_201701 <- read.csv(file = paste(path,"2017-01.csv", sep = ""),
@@ -332,14 +332,15 @@ data$Fecha_Arribo <- as.Date(data$Fecha_Arribo,"%d/%m/%Y")
 
 #with more information this is how the data looks like:
 data_day <- data %>%
-  group_by(Fecha_Retiro) %>%
+  group_by(Fecha_Retiro, Genero_Usuario) %>%
   summarise(trips= sum(!is.na(Fecha_Retiro))) %>%
   filter(Fecha_Retiro >= as.Date('2017-01-01'))
 
 p <- ggplot(data = data_day, aes(x = Fecha_Retiro, y = trips)) + 
   geom_line(group=1) +
-  geom_point()
-print(p)
+  geom_point()+
+  facet_wrap(~Genero_Usuario, ncol=1)
+ggplotly(p)
 
 
 #DECRIPCI?N DE C?MO VAS A TRANSFORMAR LA INFORMACI?N
@@ -366,7 +367,7 @@ ToLSTM <- data_day_station %>%
     ungroup()%>%
     summarise(n_ciclo = n_distinct(Ciclo_Estacion_Retiro)))
 
-#Number of stations?
+#Number of dates?
 (n_days <- ToLSTM%>%
     ungroup()%>%
     summarise(n_ciclo = n_distinct(Fecha_Retiro)))
@@ -384,11 +385,11 @@ data_array <- array(data = numeric(n), dim = c(n, days, 2))
     ungroup()%>%
     distinct(Ciclo_Estacion_Retiro))
 
-#Dictionary of dates
+#Dictionary of dates# poner one hot
 (dates_retiro <- ToLSTM%>%
     ungroup()%>%
     distinct(Fecha_Retiro)%>%
-    mutate(pivot_wk = format(as.Date(Fecha_Retiro),"%u")))
+    mutate(pivot_wk = as.numeric(format(as.Date(Fecha_Retiro),"%u"))))
 
 #Fill the array with data
 # rowN <- 0
@@ -489,12 +490,12 @@ dim(x_test)
 dim(y_test)
 #divisors(25872)
 batch_size <- 44
-epochs <- 100
+epochs <- 10
 
 cat('Creating model:\n')
 model <- keras_model_sequential()
 model %>%
-  layer_lstm(units = 50, input_shape = c( 21, 2), batch_size = batch_size,
+  layer_lstm(units = 70, input_shape = c( 21, 2), batch_size = batch_size,
              return_sequences = TRUE, stateful = TRUE) %>% 
   layer_dropout(rate = 0.5) %>%
   layer_lstm(units = 50, return_sequences = FALSE, stateful = TRUE) %>% 
@@ -513,6 +514,7 @@ history <- model %>% fit(
   shuffle = TRUE)
 
 plot(history)
+history$metrics
 
 #Prediction and compasiron with the actual values
 predicted_output <- model %>% 
@@ -527,8 +529,8 @@ for(rtc in 1:20){
   #rtc<-5
   plotfun <- as.data.frame(
     cbind(ts = seq(from = 1, to= 7, by= 1),
-          pred = predicted_output[rtc*44,], 
-          real = as.numeric(y_test[rtc*44,]) ))
+          pred = predicted_output[rtc*4,], 
+          real = as.numeric(y_test[rtc*4,]) ))
   
   plotfun <- reshape2::melt(plotfun, id="ts")
   

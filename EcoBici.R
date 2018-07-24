@@ -379,7 +379,11 @@ ToLSTM <- data_day_station %>%
 library(keras)
 (n <-77*448)
 (days <- 28)
-data_array <- array(data = numeric(n), dim = c(n, days, 2))
+data_array <- array(data = numeric(n), dim = c(n, days, 8))
+week_array <- array(data = numeric(7), dim = c(7,7))
+for(i in 1:7){
+  week_array[i,i]=1
+}
 #Dictionary of stations
 (stations <- ToLSTM%>%
     ungroup()%>%
@@ -390,6 +394,9 @@ data_array <- array(data = numeric(n), dim = c(n, days, 2))
     ungroup()%>%
     distinct(Fecha_Retiro)%>%
     mutate(pivot_wk = as.numeric(format(as.Date(Fecha_Retiro),"%u"))))
+
+
+
 
 #Fill the array with data
 # rowN <- 0
@@ -457,15 +464,13 @@ for(i_s in 1:448){
       select(trips, weekday)
     
     data_array[rowN ,  , 1 ] <- dplyr::pull(data_point,trips)
-    data_array[rowN ,  , 2 ] <- dplyr::pull(data_point,weekday)
+    data_array[rowN ,  , -1 ] <- week_array[ as.numeric(dplyr::pull(data_point,weekday)), ]
   }
 }
 
 
 ##########################################################
 ##########################################################
-
-
 
 #Split into test and training data
 
@@ -475,11 +480,11 @@ nt <- floor(dim(data_array)[1]*0.75)
 train<-sample(dim(data_array)[1], nt )
 
 x_train <- data_array[ train , 1:21,  ]
-x_train <- array_reshape(x = x_train, dim = list(nt, 21, 2))
+#x_train <- array_reshape(x = x_train, dim = list(nt, 21, 2))
 y_train <- data_array[ train , 22:28, 1]
 
 x_test <- data_array[ -train , 1:21,  ]
-x_test <- array_reshape(x = x_test, dim = list(dim(data_array)[1]-nt, 21, 2) )
+#x_test <- array_reshape(x = x_test, dim = list(dim(data_array)[1]-nt, 21, 2) )
 y_test <- data_array[ -train, 22:28, 1]
 
 
@@ -495,16 +500,19 @@ epochs <- 10
 cat('Creating model:\n')
 model <- keras_model_sequential()
 model %>%
-  layer_lstm(units = 70, input_shape = c( 21, 2), batch_size = batch_size,
+  layer_lstm(units = 75, input_shape = c( 21, 8), batch_size = batch_size,
              return_sequences = TRUE, stateful = TRUE) %>% 
   layer_dropout(rate = 0.5) %>%
-  layer_lstm(units = 50, return_sequences = FALSE, stateful = TRUE) %>% 
+  layer_lstm(units = 75, return_sequences = FALSE, stateful = TRUE) %>% 
   layer_dense(units = 7)
 summary(model)
 
-rmsprop <- optimizer_rmsprop(lr=0.003)
+rmsprop <- optimizer_rmsprop(lr=0.005)
+adm <- optimizer_adam(lr=0.0005)
 
-model %>% compile(loss = 'mse', rmsprop )
+model %>% compile(loss = 'mse', 
+                  optimizer = adm,
+                  metrics = c('mse'))
 history <- model %>% fit(
   x_train, y_train, 
   batch_size = batch_size,

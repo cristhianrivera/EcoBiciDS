@@ -495,7 +495,7 @@ dim(x_test)
 dim(y_test)
 #divisors(25872)
 batch_size <- 44
-epochs <- 10
+epochs <- 50
 
 cat('Creating model:\n')
 model <- keras_model_sequential()
@@ -511,8 +511,9 @@ rmsprop <- optimizer_rmsprop(lr=0.005)
 adm <- optimizer_adam(lr=0.0005)
 
 model %>% compile(loss = 'mse', 
-                  optimizer = adm,
-                  metrics = c('mse'))
+                  optimizer = adm
+                  #metrics = c('mse')
+                  )
 history <- model %>% fit(
   x_train, y_train, 
   batch_size = batch_size,

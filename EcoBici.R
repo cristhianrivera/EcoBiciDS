@@ -271,8 +271,8 @@ hist(data_day_station$trips,200)
 
 #we need to create an array with tha shape: (#Stations, #days, #trips)
 
-#path = 'C:/Users/a688291/Downloads/Personal/ecobici/'
-path = '/Users/Cristhian/Documents/EcoBici/ecobici/'
+path = 'C:/Users/a688291/Downloads/Personal/ecobici/'
+#path = '/Users/Cristhian/Documents/EcoBici/ecobici/'
 
 
 data_201701 <- read.csv(file = paste(path,"2017-01.csv", sep = ""),
@@ -336,28 +336,35 @@ data_day <- data %>%
   summarise(trips= sum(!is.na(Fecha_Retiro))) %>%
   filter(Fecha_Retiro >= as.Date('2017-01-01'))
 
+data_day %>%
+  ungroup() %>%
+  group_by(Genero_Usuario) %>%
+  summarise(trips= sum(trips))
+
 p <- ggplot(data = data_day, aes(x = Fecha_Retiro, y = trips)) + 
   geom_line(group=1) +
   geom_point()+
+  xlab("Date")+
+  ylab("Number of trips")+
   facet_wrap(~Genero_Usuario, ncol=1)
 ggplotly(p)
 
 
-#DECRIPCI?N DE C?MO VAS A TRANSFORMAR LA INFORMACI?N
+#DECRIPCION DE C?MO VAS A TRANSFORMAR LA INFORMACI?N
 
 data_day_station <- data %>%
   group_by(Fecha_Retiro, Ciclo_Estacion_Retiro) %>%
   summarise(trips= sum(!is.na(Fecha_Retiro))) %>%
-  filter(Fecha_Retiro >= as.Date('2017-01-01')) %>%
-  filter(Fecha_Retiro <= as.Date('2017-03-25'))
+  filter(Fecha_Retiro >= as.Date('2017-01-01')) #%>%
+  #filter(Fecha_Retiro <= as.Date('2017-03-25'))
 
 
 
 ToLSTM <- data_day_station %>%
   mutate(weekday = format(as.Date(Fecha_Retiro),"%u")) %>%
   mutate(monthday = day(as.Date(Fecha_Retiro))) %>%
-  mutate(weeknumber = strftime(as.Date(Fecha_Retiro),"%V"))%>%
-  filter(weeknumber != "52")
+  mutate(weeknumber = strftime(as.Date(Fecha_Retiro),"%V"))
+
   
 
 
@@ -377,7 +384,7 @@ ToLSTM <- data_day_station %>%
 #Our data will have the shape (77X448,    28,         1    )
 #-----------------------------(samples, timesteps, features)
 library(keras)
-(n <-77*448)
+(n <-62*448)
 (days <- 28)
 data_array <- array(data = numeric(n), dim = c(n, days, 8))
 week_array <- array(data = numeric(7), dim = c(7,7))
@@ -396,8 +403,7 @@ for(i in 1:7){
     mutate(pivot_wk = as.numeric(format(as.Date(Fecha_Retiro),"%u"))))
 
 
-
-
+View(stations)
 #Fill the array with data
 # rowN <- 0
 # for(i_s in 1:448){
@@ -432,7 +438,7 @@ for(i in 1:7){
 
 ##########################################################
 ##########################################################
-
+startDate <- dim(dates_retiro)[1] - 28
 rowN <- 0
 for(i_s in 1:448){
   # i_s <- 444 ########
@@ -452,7 +458,7 @@ for(i_s in 1:448){
            weekday = ifelse(!is.na(weekday), weekday, pivot_wk))%>%
     select(Fecha_Retiro, trips, weekday)
   
-  for(k_w in 1:56){
+  for(k_w in 1:startDate){
     # k_w <- 1 ########
     rowN <- rowN + 1
     dq <- dates_retiro$Fecha_Retiro[k_w]
@@ -477,7 +483,9 @@ for(i_s in 1:448){
 
 set.seed(12345)
 nt <- floor(dim(data_array)[1]*0.75)
-train<-sample(dim(data_array)[1], nt )
+train <-sample(dim(data_array)[1], nt )
+#divisors(20832)
+
 
 x_train <- data_array[ train , 1:21,  ]
 #x_train <- array_reshape(x = x_train, dim = list(nt, 21, 2))
@@ -494,8 +502,8 @@ dim(y_train)
 dim(x_test)
 dim(y_test)
 #divisors(25872)
-batch_size <- 44
-epochs <- 50
+batch_size <- 32 #56
+epochs <- 300
 
 cat('Creating model:\n')
 model <- keras_model_sequential()
@@ -511,8 +519,8 @@ rmsprop <- optimizer_rmsprop(lr=0.005)
 adm <- optimizer_adam(lr=0.0005)
 
 model %>% compile(loss = 'mse', 
-                  optimizer = adm
-                  #metrics = c('mse')
+                  optimizer = adm,
+                  metrics = c('mse')
                   )
 history <- model %>% fit(
   x_train, y_train, 

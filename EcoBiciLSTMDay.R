@@ -145,7 +145,6 @@ for(i in 1:7){
 startDate <- dim(dates_retiro)[1] - 28
 rowN <- 0
 for(i_s in 1:448){
-  # i_s <- 444 ########
   print(i_s)
   loop_station <- as.numeric(stations[i_s,1])
   
@@ -163,7 +162,6 @@ for(i_s in 1:448){
     select(Fecha_Retiro, trips, weekday)
   
   for(k_w in 1:startDate){
-    # k_w <- 1 ########
     rowN <- rowN + 1
     dq <- dates_retiro$Fecha_Retiro[k_w]
     dt_from <- as.Date(dq)

@@ -203,7 +203,7 @@ dim(y_train)
 dim(x_test)
 dim(y_test)
 batch_size <- 32 #56
-epochs <- 200
+epochs <- 300
 
 cat('Creating model:\n')
 model <- keras_model_sequential()

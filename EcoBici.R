@@ -271,8 +271,8 @@ hist(data_day_station$trips,200)
 
 #we need to create an array with tha shape: (#Stations, #days, #trips)
 
-path = 'C:/Users/a688291/Downloads/Personal/ecobici/'
-#path = '/Users/Cristhian/Documents/EcoBici/ecobici/'
+#path = 'C:/Users/a688291/Downloads/Personal/ecobici/'
+path = '/Users/Cristhian/Documents/EcoBici/ecobici/'
 
 
 data_201701 <- read.csv(file = paste(path,"2017-01.csv", sep = ""),
@@ -364,9 +364,6 @@ ToLSTM <- data_day_station %>%
   mutate(weekday = format(as.Date(Fecha_Retiro),"%u")) %>%
   mutate(monthday = day(as.Date(Fecha_Retiro))) %>%
   mutate(weeknumber = strftime(as.Date(Fecha_Retiro),"%V"))
-
-  
-
 
 
 #Number of stations?
@@ -503,7 +500,7 @@ dim(x_test)
 dim(y_test)
 #divisors(25872)
 batch_size <- 32 #56
-epochs <- 300
+epochs <- 200
 
 cat('Creating model:\n')
 model <- keras_model_sequential()
@@ -519,8 +516,8 @@ rmsprop <- optimizer_rmsprop(lr=0.005)
 adm <- optimizer_adam(lr=0.0005)
 
 model %>% compile(loss = 'mse', 
-                  optimizer = adm,
-                  metrics = c('mse')
+                  optimizer = adm#,
+                  #metrics = c('mse')
                   )
 history <- model %>% fit(
   x_train, y_train, 
@@ -536,6 +533,44 @@ history$metrics
 #Prediction and compasiron with the actual values
 predicted_output <- model %>% 
   predict(x_test, batch_size = batch_size)
+
+
+
+#Plot the whole month of a station
+
+i = 1456 #number of row to plot
+real <- c(x_test[i,,1],y_test[i,]) 
+
+seqNA <- seq(1,21,1)
+seqNA[seqNA != 0] <- NA
+predicted <- c(seqNA,predicted_output[i,])
+
+plotfun <- as.data.frame(
+  cbind(ts = seq(from=1,to=28,by=1),
+        real,
+        predicted))
+
+plotfun <- reshape2::melt(plotfun, id="ts")
+
+p <- ggplot(data = plotfun,
+            aes(x = ts, 
+                y = value, 
+                colour = variable )) +
+  geom_line()+
+  xlab('Time')+
+  ylab('Value')+
+  theme_minimal()
+p
+
+sm <- 0
+for (i in 1:6499){
+  sm <- sm + ifelse(is.infinite(mape(y_test[i,],predicted_output[i,])), next()
+                    ,mape(y_test[i,],predicted_output[i,]))
+  
+  print(mape(y_test[i,],predicted_output[i,]))
+}
+sm/6499
+
 
 dim(x_test)
 dim(y_test)

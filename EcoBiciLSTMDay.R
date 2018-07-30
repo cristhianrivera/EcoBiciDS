@@ -119,7 +119,7 @@ ToLSTM <- data_day_station %>%
 
 #One way we can build 28 data points from  12 total weeks is by selecting groups of 28 consecutive days
 #and we can get up to 77 groups of 28 datapoints out of 12 weeks (84 days)
-#Our data will have the shape ( 62X448,    28    ,    1    )
+#Our data will have the shape ( 62X448,    28    ,    8    )
 #-----------------------------(samples, timesteps, features)
 library(keras)
 (n <-62*448)

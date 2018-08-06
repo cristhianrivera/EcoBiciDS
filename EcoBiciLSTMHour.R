@@ -15,8 +15,8 @@ library(keras)
 
 
 
-#path = 'C:/Users/a688291/Downloads/Personal/ecobici/'
-path = '/Users/Cristhian/Documents/EcoBici/ecobici/'
+path = 'C:/Users/a688291/Downloads/Personal/ecobici/'
+#path = '/Users/Cristhian/Documents/EcoBici/ecobici/'
 
 
 data_201701 <- read.csv(file = paste(path,"2017-01.csv", sep = ""),
@@ -79,14 +79,15 @@ data <- data_201701 %>%
 data$Fecha_Retiro <- as.Date(data$Fecha_Retiro,"%d/%m/%Y")
 data$Fecha_Arribo <- as.Date(data$Fecha_Arribo,"%d/%m/%Y")
 
+View(data)
 
 #transformation to get hours and days together
 data <- data %>%
   mutate(dt_time = ymd_hms(paste(Fecha_Retiro, Hora_Retiro))) %>%
-  mutate(h = floor_date(dt_time, unit = "hours")) %>%
-  mutate(Hora_Retiro_Gut = hour(as_datetime( Hora_Retiro)))
+  mutate(h = floor_date(dt_time, unit = "hours")) 
+  #%>% mutate(Hora_Retiro_Gut = hour(as_datetime( Hora_Retiro)))
 
-View(head(data))
+View(data)
 
 data_day <- data %>%
   group_by(h, Genero_Usuario) %>%
@@ -109,6 +110,16 @@ p <- ggplot(data = data_day, aes(x = h, y = trips)) +
   xlab("Date")+
   ylab("Number of trips")+
   facet_wrap(~Genero_Usuario, ncol=1)
+
+p<- ggplot(data = data_day,
+       aes(x = h, 
+           y = trips, 
+           colour = Genero_Usuario )) +
+  geom_line(group=1) +
+  geom_point()+
+  xlab("Date")+
+  ylab("Number of trips")
+
 ggplotly(p)
 
 
@@ -133,7 +144,7 @@ ToLSTM <- data %>%
   summarise(trips= sum(!is.na(h))) %>%
   filter(h >= as.Date('2017-01-01'))
 
-
+View(ToLSTM)
 #Dictionary of stations
 (stations <- ToLSTM%>%
     ungroup()%>%
@@ -142,17 +153,20 @@ View(stations)
 #Dictionary of dates# poner one hot
 (dates_retiro <- ToLSTM%>%
     ungroup()%>%
-    distinct(h)%>%
-    mutate(pivot_h = as.numeric(hour(as.Date(h))))%>%
-    select(-Fecha_Retiro))
+    distinct(h))
 
-mutate(dates_retiro,hh = time(as.Date(h)) )
+dates_retiro <- cbind(dates_retiro,data.frame(seq(from = 1, to = length(dates_retiro$h), by = 1) ))
+colnames(dates_retiro) <- c('h','n_h')
+
+
+View(dates_retiro)
+
 #to calculate the total number of rows for our array 
 #data (points_per_day * days_in_total - length_input_and_output) * number_stations
 
 (hours <- 120)
 (n <- (20*31 - 120) * 447)
-##                                            n, hours, trips + one_hot_encoding_hour_day
+##                          n, hours, trips + one_hot_encoding_hour_day
 data_array <- array(data = numeric(n), dim = c(n, hours, 1 + 20))
 hour_array <- array(data = numeric(20), dim = c(20,20))
 for(i in 1:20){

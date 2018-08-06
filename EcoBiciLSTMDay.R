@@ -12,10 +12,11 @@ library(stringr)
 library(forecast)
 library(xts)
 library(numbers)
+library(shiny)
 
 
 ####Data preprocessing 
-path = '/Documents/EcoBici/ecobici/'
+path = "/Documents/EcoBici/ecobici/"
 
 
 data_201701 <- read.csv(file = paste(path,"2017-01.csv", sep = ""),

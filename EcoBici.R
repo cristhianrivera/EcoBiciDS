@@ -271,8 +271,8 @@ hist(data_day_station$trips,200)
 
 #we need to create an array with tha shape: (#Stations, #days, #trips)
 
-#path = 'C:/Users/a688291/Downloads/Personal/ecobici/'
-path = '/Users/Cristhian/Documents/EcoBici/ecobici/'
+path = 'C:/Users/a688291/Downloads/Personal/ecobici/'
+#path = '/Users/Cristhian/Documents/EcoBici/ecobici/'
 
 
 data_201701 <- read.csv(file = paste(path,"2017-01.csv", sep = ""),
@@ -500,7 +500,7 @@ dim(x_test)
 dim(y_test)
 #divisors(25872)
 batch_size <- 32 #56
-epochs <- 200
+epochs <- 20
 
 cat('Creating model:\n')
 model <- keras_model_sequential()
@@ -526,6 +526,14 @@ history <- model %>% fit(
   verbose = 1, 
   validation_data = list(x_test, y_test),
   shuffle = TRUE)
+
+getwd()
+setwd('C:/Users/a688291/Documents/EDA_CRJR/EcoBiciDS')
+save_model_hdf5(model,'ecobici.h5')
+
+mimodel <- load_model_hdf5('ecobici.h5')
+
+attributes(mimodel)
 
 plot(history)
 history$metrics

@@ -87,7 +87,7 @@ data <- data %>%
   mutate(h = floor_date(dt_time, unit = "hours")) 
   #%>% mutate(Hora_Retiro_Gut = hour(as_datetime( Hora_Retiro)))
 
-View(data)
+#View(data)
 
 data_day <- data %>%
   group_by(h, Genero_Usuario) %>%
@@ -144,73 +144,87 @@ ToLSTM <- data %>%
   summarise(trips= sum(!is.na(h))) %>%
   filter(h >= as.Date('2017-01-01'))
 
-View(ToLSTM)
+#View(ToLSTM)
 #Dictionary of stations
 (stations <- ToLSTM%>%
     ungroup()%>%
     distinct(Ciclo_Estacion_Retiro))
-View(stations)
+n_stations <- length(stations$Ciclo_Estacion_Retiro) ##might be the answer to control the amount of information
+
+#View(stations)
 #Dictionary of dates# poner one hot
 (dates_retiro <- ToLSTM%>%
     ungroup()%>%
     distinct(h))
 
 dates_retiro <- cbind(dates_retiro,data.frame(seq(from = 1, to = length(dates_retiro$h), by = 1) ))
-colnames(dates_retiro) <- c('h','n_h')
 
+colnames(dates_retiro) <- c('h','numberDataHour')
 
-View(dates_retiro)
+dates_retiro <- dates_retiro %>%
+  mutate(number_hour = as.numeric(format(h, "%H")),
+         weekday = as.numeric(format(as.Date(h),"%u"))) %>%
+  mutate(number_hour = ifelse(number_hour==0, number_hour+1, number_hour-3) )#to keep the range between 1-20
+
+#View(dates_retiro)
 
 #to calculate the total number of rows for our array 
 #data (points_per_day * days_in_total - length_input_and_output) * number_stations
 
-(hours <- 120)
-(n <- (20*31 - 120) * 447)
-##                          n, hours, trips + one_hot_encoding_hour_day
-data_array <- array(data = numeric(n), dim = c(n, hours, 1 + 20))
-hour_array <- array(data = numeric(20), dim = c(20,20))
+(hours <- 60)
+(n <- (20 * 31 - hours) * n_stations)
+## n, hours, trips + one_hot_encoding_hour_day + one_oht_encoding_weekday
+data_array <- array(data = numeric(n)  , dim = c(n, hours, 1 + 20 + 7))
+hour_array <- array(data = numeric(20) , dim = c(20,20))
+week_array <- array(data = numeric(7)  , dim = c(7,7))
+
+
 for(i in 1:20){
   hour_array[i,i]=1
 }
+
+for(i in 1:7){
+  week_array[i,i]=1
+}
+
 
 
 #Fill the data_array
 
 ##########################################################
 ##########################################################
-startDate <- dim(dates_retiro)[1] - 28
+#startDate <- dim(dates_retiro)[1] - 28
 rowN <- 0
-for(i_s in 1:447){
-  # i_s <- 444 ########
+for(i_s in 1:n_stations){
+  #i_s <- 1 ########
   print(i_s)
   loop_station <- as.numeric(stations[i_s,1])
   
   data_station <- ToLSTM %>%
     filter(Ciclo_Estacion_Retiro == loop_station) %>%
-    select(h, trips, weekday) %>%
+    select(h, trips) %>%
     arrange(h)
   
   dtToArray <- dates_retiro %>% 
-    left_join(data_station, by = 'Fecha_Retiro' )
+    left_join(data_station, by = 'h' ) #To fill with zeros the hours with no data
   
   dtToArray <- dtToArray %>%
-    mutate(trips = ifelse(!is.na(trips), trips, 0),
-           weekday = ifelse(!is.na(weekday), weekday, pivot_wk))%>%
-    select(Fecha_Retiro, trips, weekday)
+    mutate(trips = ifelse(!is.na(trips), trips, 0))
   
-  for(k_w in 1:startDate){
-    # k_w <- 1 ########
+  for(k_w in 1:(620 - 60  )){  # until the last 60 window of hourly trips
+    #k_w <- 561 ########
     rowN <- rowN + 1
-    dq <- dates_retiro$Fecha_Retiro[k_w]
-    dt_from <- as.Date(dq)
-    dt_to   <- as.Date(dq) + 27
+    
+    numberDataHour_from <- k_w
+    numberDataHour_to   <- k_w + 59
     data_point <- dtToArray %>%
       ungroup()%>%
-      filter(Fecha_Retiro >= as.Date(dt_from) & Fecha_Retiro <= as.Date(dt_to)) %>%
-      select(trips, weekday)
+      filter(numberDataHour >= numberDataHour_from & numberDataHour <= numberDataHour_to ) %>%
+      select(trips, weekday, number_hour)
     
-    data_array[rowN ,  , 1 ] <- dplyr::pull(data_point,trips)
-    data_array[rowN ,  , -1 ] <- week_array[ as.numeric(dplyr::pull(data_point,weekday)), ]
+    data_array[rowN ,  , 1 ]    <- dplyr::pull(data_point,trips)
+    data_array[rowN ,  , 2:21 ]  <- hour_array[ as.numeric(dplyr::pull(data_point,number_hour)), ]
+    data_array[rowN ,  , 22:28 ] <- week_array[ as.numeric(dplyr::pull(data_point,weekday)), ]
   }
 }
 
@@ -220,4 +234,60 @@ for(i_s in 1:447){
 
 
 
+set.seed(12345)
+nt <- floor(dim(data_array)[1]*0.75)
+train <-sample(dim(data_array)[1], nt )
+# divisors(nt)
+# divisors(62580)
+
+x_train <- data_array[ train , 1:40 ,  ]
+y_train <- data_array[ train , 41:60, 1]
+
+x_test <- data_array[ -train , 1:40 ,  ]
+y_test <- data_array[ -train , 41:60, 1]
+
+
+dim(x_train)
+dim(y_train)
+
+dim(x_test)
+dim(y_test)
+
+batch_size <- 42 #28, 70
+epochs <- 10
+
+cat('Creating model:\n')
+model <- keras_model_sequential()
+model %>%
+  layer_lstm(units = 75, 
+             input_shape = c( 40, 28), 
+             batch_size = batch_size,
+             return_sequences = FALSE, 
+             stateful = TRUE) %>% 
+  layer_dropout(rate = 0.5) %>%
+  #layer_lstm(units = 75, return_sequences = FALSE, stateful = TRUE) %>% 
+  layer_dense(units = 20)
+summary(model)
+
+rmsprop <- optimizer_rmsprop(lr=0.005)
+adm <- optimizer_adam(lr=0.0005)
+
+model %>% compile(loss = 'mse', 
+                  optimizer = adm,
+                  metrics = c('mse')
+)
+history <- model %>% fit(
+  x_train, y_train, 
+  batch_size = batch_size,
+  epochs = epochs, 
+  verbose = 1, 
+  validation_data = list(x_test, y_test),
+  shuffle = TRUE)
+
+plot(history)
+history$metrics
+
+#Predict values
+predicted_output <- model %>% 
+  predict(x_test, batch_size = batch_size)
 

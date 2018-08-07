@@ -16,7 +16,7 @@ library(shiny)
 
 
 ####Data preprocessing 
-path = "/Documents/EcoBici/ecobici/"
+path = "C:/Users/a688291/Downloads/Personal/ecobici/"
 
 
 data_201701 <- read.csv(file = paste(path,"2017-01.csv", sep = ""),
@@ -85,22 +85,58 @@ data_day %>%
   group_by(Genero_Usuario) %>%
   summarise(trips= sum(trips))
 
-p <- ggplot(data = data_day, aes(x = Fecha_Retiro, y = trips)) + 
+p <- ggplot(data = data_day, aes(x = Fecha_Retiro, y = trips, colour=Genero_Usuario)) + 
   geom_line(group=1) +
   geom_point()+
   xlab("Date")+
-  ylab("Number of trips")+
-  facet_wrap(~Genero_Usuario, ncol=1)
+  ylab("Number of trips")#+
+  # facet_wrap(~Genero_Usuario, ncol=1)
 ggplotly(p)
 
 
 #Filter the dataset by date, we wanted to consider only 2017
+range01 <- function(x){(x-min(x))/(max(x)-min(x))}
+
+inverse_range <- function(min_x, max_x, x){
+  (max_x - min_x) * x + min_x
+}
+
 data_day_station <- data %>%
+  filter(Fecha_Retiro >= as.Date('2017-01-01')) %>%
   group_by(Fecha_Retiro, Ciclo_Estacion_Retiro) %>%
   summarise(trips= sum(!is.na(Fecha_Retiro))) %>%
-  filter(Fecha_Retiro >= as.Date('2017-01-01')) #%>%
+  mutate(trips_ranged = range01(trips)) %>%
+  mutate(trips_inversed = inverse_range(min_trips, max_trips, trips_ranged)) 
 
 
+data_day_station <- data %>%
+  filter(Fecha_Retiro >= as.Date('2017-01-01')) %>%
+  group_by(Fecha_Retiro, Ciclo_Estacion_Retiro) %>%
+  summarise(trips_normal = sum(!is.na(Fecha_Retiro))) %>%
+  mutate(trips = (trips_normal-min(trips_normal))/(max(trips_normal)-min(trips_normal)) ) %>%
+  mutate(trips_rev =  trips * (max(trips_normal)-min(trips_normal)) + min(trips_normal) )
+
+
+for(i_s in 1:448){
+  i_s = 1##
+  loop_station <- as.numeric(stations[i_s,1])
+  data_station <- ToLSTM %>%
+    filter(Ciclo_Estacion_Retiro == loop_station) %>%
+    select(Fecha_Retiro, trips_normal, weekday) %>%
+    arrange(Fecha_Retiro)
+}
+
+data_station <- ToLSTM %>%
+  filter(Ciclo_Estacion_Retiro == loop_station) %>%
+  select(Fecha_Retiro, trips, weekday) %>%
+  arrange(Fecha_Retiro)
+
+
+
+max_trips <- max(data_day_station$trips_normal)
+min_trips <- min(data_day_station$trips_normal)
+
+View(head(data_day_station))
 
 ToLSTM <- data_day_station %>%
   mutate(weekday = format(as.Date(Fecha_Retiro),"%u")) %>%
@@ -146,6 +182,7 @@ for(i in 1:7){
 startDate <- dim(dates_retiro)[1] - 28
 rowN <- 0
 for(i_s in 1:448){
+  ##i_s <- 1 ##
   print(i_s)
   loop_station <- as.numeric(stations[i_s,1])
   
@@ -202,24 +239,29 @@ dim(y_train)
 dim(x_test)
 dim(y_test)
 batch_size <- 32 #56
-epochs <- 300
+epochs <- 50
 
 cat('Creating model:\n')
 model <- keras_model_sequential()
 model %>%
-  layer_lstm(units = 75, input_shape = c( 21, 8), batch_size = batch_size,
-             return_sequences = TRUE, stateful = TRUE) %>% 
+  layer_lstm(units = 150, input_shape = c( 21, 8), batch_size = batch_size,
+             return_sequences = FALSE, stateful = FALSE) %>% 
   layer_dropout(rate = 0.5) %>%
-  layer_lstm(units = 75, return_sequences = FALSE, stateful = TRUE) %>% 
+  #layer_lstm(units = 75, return_sequences = FALSE, stateful = TRUE) %>% 
   layer_dense(units = 7)
 summary(model)
+
+
+mape <- function(y_true, y_for){
+  return(100 * (abs(y_true-y_for)/y_true ))
+}
 
 rmsprop <- optimizer_rmsprop(lr=0.005)
 adm <- optimizer_adam(lr=0.0005)
 
-model %>% compile(loss = 'mse', 
-                  optimizer = adm#,
-                  #metrics = c('mse')
+model %>% compile(loss = 'mean_absolute_error', 
+                  optimizer = adm,
+                  metrics = c('mse')
 )
 history <- model %>% fit(
   x_train, y_train, 
@@ -238,12 +280,24 @@ predicted_output <- model %>%
 
 #Plot the whole month of a station
 
-i = 1456 #number of row to plot
+sm <- 0
+for (i in 1:6499){
+  sm <- sm + ifelse(is.infinite(mape(y_test[i,],predicted_output[i,])), next()
+                    ,mape(y_test[i,],predicted_output[i,]))
+  
+  print(mape(y_test[i,],predicted_output[i,]))
+}
+sm/6499
+
+
+i = 853 #number of row to plot
 real <- c(x_test[i,,1],y_test[i,]) 
+
+real <- real * (max_trips-min_trips) + min_trips
 
 seqNA <- seq(1,21,1)
 seqNA[seqNA != 0] <- NA
-predicted <- c(seqNA,predicted_output[i,])
+predicted <- c(seqNA, predicted_output[i,]*(max_trips-min_trips) + min_trips)
 
 plotfun <- as.data.frame(
   cbind(ts = seq(from=1,to=28,by=1),

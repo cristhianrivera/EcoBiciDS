@@ -101,40 +101,35 @@ inverse_range <- function(min_x, max_x, x){
   (max_x - min_x) * x + min_x
 }
 
-data_day_station <- data %>%
-  filter(Fecha_Retiro >= as.Date('2017-01-01')) %>%
-  group_by(Fecha_Retiro, Ciclo_Estacion_Retiro) %>%
-  summarise(trips= sum(!is.na(Fecha_Retiro))) %>%
-  mutate(trips_ranged = range01(trips)) %>%
-  mutate(trips_inversed = inverse_range(min_trips, max_trips, trips_ranged)) 
+# data_day_station <- data %>%
+#   filter(Fecha_Retiro >= as.Date('2017-01-01')) %>%
+#   group_by(Fecha_Retiro, Ciclo_Estacion_Retiro) %>%
+#   summarise(trips= sum(!is.na(Fecha_Retiro))) %>%
+#   mutate(trips_ranged = range01(trips)) %>%
+#   mutate(trips_inversed = inverse_range(min_trips, max_trips, trips_ranged)) 
 
 
 data_day_station <- data %>%
   filter(Fecha_Retiro >= as.Date('2017-01-01')) %>%
   group_by(Fecha_Retiro, Ciclo_Estacion_Retiro) %>%
-  summarise(trips_normal = sum(!is.na(Fecha_Retiro))) %>%
-  mutate(trips = (trips_normal-min(trips_normal))/(max(trips_normal)-min(trips_normal)) ) %>%
-  mutate(trips_rev =  trips * (max(trips_normal)-min(trips_normal)) + min(trips_normal) )
+  summarise(trips = sum(!is.na(Fecha_Retiro)))
 
+# for(i_s in 1:448){
+#   i_s = 1##
+#   loop_station <- as.numeric(stations[i_s,1])
+#   data_station <- ToLSTM %>%
+#     filter(Ciclo_Estacion_Retiro == loop_station) %>%
+#     select(Fecha_Retiro, trips_normal, weekday) %>%
+#     arrange(Fecha_Retiro)
+# }
 
-for(i_s in 1:448){
-  i_s = 1##
-  loop_station <- as.numeric(stations[i_s,1])
-  data_station <- ToLSTM %>%
-    filter(Ciclo_Estacion_Retiro == loop_station) %>%
-    select(Fecha_Retiro, trips_normal, weekday) %>%
-    arrange(Fecha_Retiro)
-}
+# data_station <- ToLSTM %>%
+#   filter(Ciclo_Estacion_Retiro == loop_station) %>%
+#   select(Fecha_Retiro, trips, weekday) %>%
+#   arrange(Fecha_Retiro)
 
-data_station <- ToLSTM %>%
-  filter(Ciclo_Estacion_Retiro == loop_station) %>%
-  select(Fecha_Retiro, trips, weekday) %>%
-  arrange(Fecha_Retiro)
-
-
-
-max_trips <- max(data_day_station$trips_normal)
-min_trips <- min(data_day_station$trips_normal)
+max_trips <- max(data_day_station$trips)
+min_trips <- min(data_day_station$trips)
 
 View(head(data_day_station))
 
@@ -154,12 +149,15 @@ ToLSTM <- data_day_station %>%
     ungroup()%>%
     summarise(n_ciclo = n_distinct(Fecha_Retiro)))
 
+
+
 #One way we can build 28 data points from  12 total weeks is by selecting groups of 28 consecutive days
-#and we can get up to 77 groups of 28 datapoints out of 12 weeks (84 days)
-#Our data will have the shape ( 62X448,    28    ,    8    )
+#and we can get up to 55 groups of 28 datapoints out of 12 weeks (84 days)
+#Our data will have the shape ( 55X448,    28    ,    8    )
 #-----------------------------(samples, timesteps, features)
+#55 comes from 90-7-28
 library(keras)
-(n <-62*448)
+(n <-55*448)
 (days <- 28)
 data_array <- array(data = numeric(n), dim = c(n, days, 8))
 week_array <- array(data = numeric(7), dim = c(7,7))
@@ -179,7 +177,7 @@ for(i in 1:7){
 
 ##########################################################
 ###Fill the array with data
-startDate <- dim(dates_retiro)[1] - 28
+LastStartDate <- dim(dates_retiro)[1] - 28
 rowN <- 0
 for(i_s in 1:448){
   ##i_s <- 1 ##
@@ -196,10 +194,15 @@ for(i_s in 1:448){
   
   dtToArray <- dtToArray %>%
     mutate(trips = ifelse(!is.na(trips), trips, 0),
-           weekday = ifelse(!is.na(weekday), weekday, pivot_wk))%>%
-    select(Fecha_Retiro, trips, weekday)
+           weekday = ifelse(!is.na(weekday), weekday, pivot_wk),
+           tripsD7 = log(trips+1) - lag(log(trips+1),7) ) %>%
+    select(Fecha_Retiro, tripsD7, weekday)
   
-  for(k_w in 1:startDate){
+  # ggplot(dtToArray)+
+  #   geom_line(aes(x=Fecha_Retiro,y=tripsD7), group=1)
+  
+  for(k_w in 8:LastStartDate+1){
+    #k_w <- 63
     rowN <- rowN + 1
     dq <- dates_retiro$Fecha_Retiro[k_w]
     dt_from <- as.Date(dq)
@@ -207,13 +210,12 @@ for(i_s in 1:448){
     data_point <- dtToArray %>%
       ungroup()%>%
       filter(Fecha_Retiro >= as.Date(dt_from) & Fecha_Retiro <= as.Date(dt_to)) %>%
-      select(trips, weekday)
+      select(tripsD7, weekday)
     
-    data_array[rowN ,  , 1 ] <- dplyr::pull(data_point,trips)
-    data_array[rowN ,  , -1 ] <- week_array[ as.numeric(dplyr::pull(data_point,weekday)), ]
+    data_array[rowN ,  , 1 ] <- dplyr::pull(data_point,tripsD7)
+    data_array[rowN ,  , 2:8 ] <- week_array[ as.numeric(dplyr::pull(data_point,weekday)), ]
   }
 }
-
 
 ##########################################################
 ##########################################################
@@ -223,8 +225,8 @@ for(i_s in 1:448){
 set.seed(12345)
 nt <- floor(dim(data_array)[1]*0.75)
 train <-sample(dim(data_array)[1], nt )
-#divisors(20832)
-
+#divisors(18480) 33 35 40 42 44 48 
+#divisors(6160) 28 35 40 44 55 56 
 
 x_train <- data_array[ train , 1:21,  ]
 y_train <- data_array[ train , 22:28, 1]
@@ -238,23 +240,18 @@ dim(y_train)
 
 dim(x_test)
 dim(y_test)
-batch_size <- 32 #56
-epochs <- 50
+batch_size <- 40
+epochs <- 100
 
 cat('Creating model:\n')
 model <- keras_model_sequential()
 model %>%
-  layer_lstm(units = 150, input_shape = c( 21, 8), batch_size = batch_size,
+  layer_lstm(units = 100, input_shape = c( 21, 8), batch_size = batch_size,
              return_sequences = FALSE, stateful = FALSE) %>% 
   layer_dropout(rate = 0.5) %>%
   #layer_lstm(units = 75, return_sequences = FALSE, stateful = TRUE) %>% 
   layer_dense(units = 7)
 summary(model)
-
-
-mape <- function(y_true, y_for){
-  return(100 * (abs(y_true-y_for)/y_true ))
-}
 
 rmsprop <- optimizer_rmsprop(lr=0.005)
 adm <- optimizer_adam(lr=0.0005)
@@ -278,36 +275,96 @@ history$metrics
 predicted_output <- model %>% 
   predict(x_test, batch_size = batch_size)
 
-#Plot the whole month of a station
 
-sm <- 0
-for (i in 1:6499){
-  sm <- sm + ifelse(is.infinite(mape(y_test[i,],predicted_output[i,])), next()
-                    ,mape(y_test[i,],predicted_output[i,]))
-  
-  print(mape(y_test[i,],predicted_output[i,]))
+
+###################################################
+#####Model that receives just one instance ########
+###################################################
+
+mape <- function(y_true, y_for){
+  len <- length(y_for)
+  mp <- 0
+  for(i in 1:len){
+    mp <- mp + (abs(y_true[i]-y_for[i])/y_true[i])
+  }
+  return(100*mp)
 }
-sm/6499
+
+#get weigths
+mweights <- keras::get_weights(model)
+
+#build the model
+modelPredict <- keras_model_sequential()
+modelPredict %>%
+  layer_lstm(units = 100, input_shape = c( 21, 8), batch_size = 1,
+             return_sequences = FALSE, stateful = FALSE) %>% 
+  layer_dropout(rate = 0.5) %>%
+  #layer_lstm(units = 75, return_sequences = FALSE, stateful = TRUE) %>% 
+  layer_dense(units = 7)
+summary(modelPredict)
+
+#set weigths from the trained model
+keras::set_weights(modelPredict, mweights)
+
+#Get data for a given station i_s
+i_s <- 405 # values from 1 to 448
+print(i_s)
+loop_station <- as.numeric(stations[i_s,1])
+
+data_station <- ToLSTM %>%
+  filter(Ciclo_Estacion_Retiro == loop_station) %>%
+  select(Fecha_Retiro, trips, weekday) %>%
+  arrange(Fecha_Retiro)
+
+dtToArray <- dates_retiro %>% 
+  left_join(data_station, by = 'Fecha_Retiro' )
+
+dtToArrayFull <- dtToArray %>%
+  mutate(trips = ifelse(!is.na(trips), trips, 0),
+         weekday = ifelse(!is.na(weekday), weekday, pivot_wk),
+         tripsD7 = log(trips+1) - lag(log(trips+1),7) ) 
+
+dtToArray <- dtToArrayFull %>%
+  select(Fecha_Retiro, tripsD7, weekday)
+
+data_point <- dtToArray %>%
+  ungroup()%>%
+  filter(Fecha_Retiro >= as.Date('2017-03-04') & Fecha_Retiro <= as.Date('2017-03-24')) %>%
+  select(tripsD7, weekday)
+
+predict_array <- array(data = numeric(8*21), dim = c(1, 21, 8))
+predict_array[1 ,  , 1 ] <- dplyr::pull(data_point,tripsD7)
+predict_array[1 ,  , 2:8 ] <- week_array[ as.numeric(dplyr::pull(data_point,weekday)), ]
+
+#predict output just for one instance
+predicted_output <- modelPredict %>% 
+  predict(predict_array, batch_size = 1)
 
 
-i = 853 #number of row to plot
-real <- c(x_test[i,,1],y_test[i,]) 
+d_to_complete <- dtToArray %>%
+  ungroup()%>%
+  filter(Fecha_Retiro >= as.Date('2017-01-01') & Fecha_Retiro <= as.Date('2017-03-24')) %>%
+  select(tripsD7)
 
-real <- real * (max_trips-min_trips) + min_trips
+real <- na.exclude(dtToArray$tripsD7)[1:length(na.exclude(dtToArray$tripsD7))]
+pred <- c(d_to_complete$tripsD7, predicted_output)
+pred <- na.exclude(pred)[1:length(na.exclude(pred))] 
 
-seqNA <- seq(1,21,1)
-seqNA[seqNA != 0] <- NA
-predicted <- c(seqNA, predicted_output[i,]*(max_trips-min_trips) + min_trips)
+#Return to unlagged series
+real <- diffinv(real, lag=7, differences = 1, xi=log(dtToArrayFull$trips[1:7] +1) )
+pred <- diffinv(pred, lag=7, differences = 1, xi=log(dtToArrayFull$trips[1:7] +1) )
+
+(mape(real,pred))
 
 plotfun <- as.data.frame(
-  cbind(ts = seq(from=1,to=28,by=1),
-        real,
-        predicted))
+  cbind(ts = dtToArray$Fecha_Retiro,
+        real = exp(real)-1,
+        pred = exp(pred)-1 ))
 
 plotfun <- reshape2::melt(plotfun, id="ts")
 
 p <- ggplot(data = plotfun,
-            aes(x = ts, 
+            aes(x = as.Date(ts), 
                 y = value, 
                 colour = variable )) +
   geom_line()+

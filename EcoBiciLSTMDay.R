@@ -16,7 +16,7 @@ library(shiny)
 library(keras)
 
 ####Data preprocessing 
-path = "C:/Users/a688291/Downloads/Personal/ecobici/"
+path = "/Users/Cristhian/Documents/EcoBici/ecobici/"
 
 
 data_201701 <- read.csv(file = paste(path,"2017-01.csv", sep = ""),
@@ -199,7 +199,6 @@ stations <- zeroesStations %>%
   filter(n_zeroes < 11) %>%
   select(Ciclo_Estacion_Retiro)
 
-
 #One way we can build 28 data points from  12 total weeks is by selecting groups of 28 consecutive days
 #and we can get up to 55 groups of 28 datapoints out of 12 weeks (84 days)
 #Our data will have the shape ( 55X436,    28    ,    8    )
@@ -298,7 +297,7 @@ adm <- optimizer_adam(lr=0.0005)
 
 model %>% compile(loss = 'mean_absolute_error', 
                   optimizer = adm,
-                  metrics = c('mse')
+                  metrics = c('mse','mape')
 )
 history <- model %>% fit(
   x_train, y_train, 
@@ -382,7 +381,7 @@ keras::set_weights(modelPredict, mweights)
 #################################################################################
 
 #30  42 117 120 121 169 190 206 209 235 247 254 261 334 339 403 417 432 433 434 442
-i_s <- 30 # values from 1 to 448
+i_s <- 421 # values from 1 to 448
 #print(i_s)
 loop_station <- as.numeric(stations[i_s,1])
 
@@ -450,7 +449,7 @@ p <- ggplot(data = plotfun,
   xlab('Time')+
   ylab('Value')+
   theme_minimal()
-ggplotly(p)
 
-# setwd('C:/Users/a688291/Documents/Downloads')
-# keras::save_model_hdf5(model,"model_200eps")
+p
+# setwd('/Users/Cristhian/Documents/EcoBici/ecobici')
+# keras::save_model_hdf5(model,"modelNoOutliers100")

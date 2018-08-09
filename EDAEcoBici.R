@@ -103,7 +103,7 @@ wipi<-filter(zeroesStations,n_zeroes >10)
 
 mapeCum <- 0
 CheckStations <- NULL
-for (cli in 1:420) {
+for (cli in 1:436) {
   i_s <- cli # values from 1 to 420
   #i_s <- 22
   #print(i_s)
@@ -155,12 +155,17 @@ for (cli in 1:420) {
   real <- exp(real)-1
   pred <- exp(pred)-1
   
+  print(paste(i_s,forecast::accuracy(real[84:90],pred[84:90])[5]))
   if(forecast::accuracy(real[84:90],pred[84:90])[5] > 30){
-    print(paste(i_s,forecast::accuracy(real[84:90],pred[84:90])[5]))
+    #print(paste(i_s,forecast::accuracy(real[84:90],pred[84:90])[5]))
     CheckStations <- c(CheckStations,i_s)
     next()
   }
   mapeCum <- mapeCum + forecast::accuracy(real[84:90],pred[84:90])[5]
 }
 
-mapeCum/420
+#14.29758 --100
+#13.40799 --200
+#13.49869 --300
+#12.65224 -- 400
+mapeCum/436

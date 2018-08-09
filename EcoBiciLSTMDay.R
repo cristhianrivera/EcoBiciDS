@@ -13,7 +13,7 @@ library(forecast)
 library(xts)
 library(numbers)
 library(shiny)
-
+library(keras)
 
 ####Data preprocessing 
 path = "C:/Users/a688291/Downloads/Personal/ecobici/"
@@ -150,36 +150,76 @@ ToLSTM <- data_day_station %>%
     summarise(n_ciclo = n_distinct(Fecha_Retiro)))
 
 
+#Dictionary of dates# 
+(dates_retiro <- ToLSTM%>%
+    ungroup()%>%
+    distinct(Fecha_Retiro)%>%
+    mutate(pivot_wk = as.numeric(format(as.Date(Fecha_Retiro),"%u"))))
+
+
+#Dictionary of stations
+stations <- ToLSTM%>%
+    ungroup()%>%
+    distinct(Ciclo_Estacion_Retiro)
+#Filter out stations by number of zeroes
+
+
+EDAStationZeroes <- function(number_station){
+  station <- stations$Ciclo_Estacion_Retiro[number_station]
+  
+  EDAStations <- data_day_station %>%
+    filter(Ciclo_Estacion_Retiro == station ) %>%
+    right_join(dates_retiro, by = 'Fecha_Retiro' )%>%
+    select(Fecha_Retiro, trips) %>%
+    mutate(trips= ifelse(!is.na(trips), trips, 0))%>%
+    arrange(Fecha_Retiro)
+  
+  EDAStations <- EDAStations%>%
+    filter(trips == 0)
+  
+  return(n_zeroes = length(EDAStations$trips))
+  
+}
+EDAStationZeroes(120)
+
+
+zeroesStations <- data.frame(station = numeric(),
+                             variance = numeric())
+
+for(i in 1:448){
+  zeroesStations <- rbind(zeroesStations , 
+                          data.frame(stations$Ciclo_Estacion_Retiro[i], EDAStationZeroes(i)) 
+  )
+}
+colnames(zeroesStations)<- c("Ciclo_Estacion_Retiro","n_zeroes")
+zeroesStations <- as.tbl(zeroesStations)
+
+#New dictionary without stations that have more than 10 zeroes
+stations <- zeroesStations %>% 
+  filter(n_zeroes < 11) %>%
+  select(Ciclo_Estacion_Retiro)
+
 
 #One way we can build 28 data points from  12 total weeks is by selecting groups of 28 consecutive days
 #and we can get up to 55 groups of 28 datapoints out of 12 weeks (84 days)
-#Our data will have the shape ( 55X448,    28    ,    8    )
+#Our data will have the shape ( 55X436,    28    ,    8    )
 #-----------------------------(samples, timesteps, features)
 #55 comes from 90-7-28
-library(keras)
-(n <-55*448)
+#library(keras)
+(n <-55*436)
 (days <- 28)
 data_array <- array(data = numeric(n), dim = c(n, days, 8))
 week_array <- array(data = numeric(7), dim = c(7,7))
 for(i in 1:7){
   week_array[i,i]=1
 }
-#Dictionary of stations
-(stations <- ToLSTM%>%
-    ungroup()%>%
-    distinct(Ciclo_Estacion_Retiro))
 
-#Dictionary of dates# poner one hot
-(dates_retiro <- ToLSTM%>%
-    ungroup()%>%
-    distinct(Fecha_Retiro)%>%
-    mutate(pivot_wk = as.numeric(format(as.Date(Fecha_Retiro),"%u"))))
 
 ##########################################################
 ###Fill the array with data
 LastStartDate <- dim(dates_retiro)[1] - 28
 rowN <- 0
-for(i_s in 1:448){
+for(i_s in 1:436){
   ##i_s <- 1 ##
   print(i_s)
   loop_station <- as.numeric(stations[i_s,1])
@@ -225,8 +265,8 @@ for(i_s in 1:448){
 set.seed(12345)
 nt <- floor(dim(data_array)[1]*0.75)
 train <-sample(dim(data_array)[1], nt )
-#divisors(18480) 33 35 40 42 44 48 
-#divisors(6160) 28 35 40 44 55 56 
+#divisors(17985)
+#divisors(5995) 
 
 x_train <- data_array[ train , 1:21,  ]
 y_train <- data_array[ train , 22:28, 1]
@@ -240,7 +280,7 @@ dim(y_train)
 
 dim(x_test)
 dim(y_test)
-batch_size <- 40
+batch_size <- 55
 epochs <- 100
 
 cat('Creating model:\n')
@@ -274,7 +314,33 @@ history$metrics
 #Predict values
 predicted_output <- model %>% 
   predict(x_test, batch_size = batch_size)
+dim(y_test)
+dim(predicted_output)
 
+
+mape <- function(y_true, y_for){
+  len <- length(y_for)
+  mp <- 0
+  for(i in 1:len){
+    mp <- mp + abs((y_true[i]-y_for[i])/y_true[i])
+  }
+  return(mp)
+}
+
+sumMape <- 0
+is_inf <- 0
+
+
+for(i in 1:length(predicted_output[,1])){
+  ypred <- predicted_output[i , ]
+  yreal <- y_test[i , ]
+  sumMape <- sumMape + ifelse(is.infinite(mape(yreal, ypred)), 
+                              {is_inf <- is_inf +1
+                                next()},
+                              mape(yreal, ypred))
+}
+
+sumMape/(length(predicted_output[,1])-is_inf)
 
 
 ###################################################
@@ -290,6 +356,10 @@ mape <- function(y_true, y_for){
   return(100*mp)
 }
 
+
+setwd("C:/Users/a688291/Downloads/Personal/ecobici/")
+
+model<-keras::load_model_hdf5('model500')
 #get weigths
 mweights <- keras::get_weights(model)
 
@@ -306,9 +376,14 @@ summary(modelPredict)
 #set weigths from the trained model
 keras::set_weights(modelPredict, mweights)
 
+
+#################################################################################
 #Get data for a given station i_s
-i_s <- 405 # values from 1 to 448
-print(i_s)
+#################################################################################
+
+#30  42 117 120 121 169 190 206 209 235 247 254 261 334 339 403 417 432 433 434 442
+i_s <- 30 # values from 1 to 448
+#print(i_s)
 loop_station <- as.numeric(stations[i_s,1])
 
 data_station <- ToLSTM %>%
@@ -354,12 +429,16 @@ pred <- na.exclude(pred)[1:length(na.exclude(pred))]
 real <- diffinv(real, lag=7, differences = 1, xi=log(dtToArrayFull$trips[1:7] +1) )
 pred <- diffinv(pred, lag=7, differences = 1, xi=log(dtToArrayFull$trips[1:7] +1) )
 
-(mape(real,pred))
+real <- exp(real)-1
+pred <- exp(pred)-1
+
+
+print(paste(i_s,forecast::accuracy(real[84:90],pred[84:90])[5]))
 
 plotfun <- as.data.frame(
   cbind(ts = dtToArray$Fecha_Retiro,
-        real = exp(real)-1,
-        pred = exp(pred)-1 ))
+        real,
+        pred))
 
 plotfun <- reshape2::melt(plotfun, id="ts")
 
@@ -371,6 +450,7 @@ p <- ggplot(data = plotfun,
   xlab('Time')+
   ylab('Value')+
   theme_minimal()
-p
+ggplotly(p)
 
-
+# setwd('C:/Users/a688291/Documents/Downloads')
+# keras::save_model_hdf5(model,"model_200eps")

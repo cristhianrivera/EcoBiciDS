@@ -95,7 +95,7 @@ p <- ggplot(data = data_day, aes(x = Fecha_Retiro, y = trips, colour=Genero_Usua
   geom_point()+
   xlab("Date")+
   ylab("Number of trips")#+
-  # facet_wrap(~Genero_Usuario, ncol=1)
+# facet_wrap(~Genero_Usuario, ncol=1)
 ggplotly(p)
 
 
@@ -164,8 +164,8 @@ ToLSTM <- data_day_station %>%
 
 #Dictionary of stations
 stations <- ToLSTM%>%
-    ungroup()%>%
-    distinct(Ciclo_Estacion_Retiro)
+  ungroup()%>%
+  distinct(Ciclo_Estacion_Retiro)
 #Filter out stations by number of zeroes
 
 
@@ -203,9 +203,9 @@ stations <- zeroesStations %>%
   select(Ciclo_Estacion_Retiro)
 
 #One way we can build 28 data points from  12 total weeks is by selecting groups of 28 consecutive days
-#and we can get up to 55 groups of 28 datapoints out of 12 weeks (84 days)
-#Our data will have the shape ( 55X436,    28    ,    8    )
-#-----------------------------(samples, timesteps, features)
+#and we can get up to 33 groups of 28 datapoints out of 12 weeks (84 days)
+#Our data will have the shape ( 55X436,    14    ,    8    )
+#-----------------------------(samples*#clients, timesteps, features)
 #55 comes from 90-7-28
 #library(keras)
 (n <-55*421)
@@ -244,7 +244,7 @@ for(i_s in 1:421){
   #   geom_line(aes(x=Fecha_Retiro,y=tripsD7), group=1)
   
   for(k_w in 8:LastStartDate+1){
-    #k_w <- 63
+    #k_w <- 8
     rowN <- rowN + 1
     dq <- dates_retiro$Fecha_Retiro[k_w]
     dt_from <- as.Date(dq)
@@ -270,11 +270,13 @@ train <-sample(dim(data_array)[1], nt )
 #divisors(16445)
 #divisors(6710) 
 
-x_train <- data_array[ train , 1:21,  ]
-y_train <- data_array[ train , 22:28, 1]
 
-x_test <- data_array[ -train , 1:21,  ]
-y_test <- data_array[ -train, 22:28, 1]
+
+x_train <- data_array[ train , 1:14,  ]
+y_train <- data_array[ train , 15:28, 1]
+
+x_test <- data_array[ -train , 1:14,  ]
+y_test <- data_array[ -train, 15:28, 1]
 
 
 dim(x_train)
@@ -288,11 +290,11 @@ epochs <- 100
 cat('Creating model:\n')
 model <- keras_model_sequential()
 model %>%
-  layer_lstm(units = 100, input_shape = c( 21, 8), batch_size = batch_size,
+  layer_lstm(units = 100, input_shape = c( 14, 8), batch_size = batch_size,
              return_sequences = FALSE, stateful = FALSE) %>% 
   layer_dropout(rate = 0.5) %>%
   #layer_lstm(units = 75, return_sequences = FALSE, stateful = TRUE) %>% 
-  layer_dense(units = 7)
+  layer_dense(units = 14)
 summary(model)
 
 rmsprop <- optimizer_rmsprop(lr=0.005)
@@ -302,13 +304,13 @@ model %>% compile(loss = 'mean_absolute_error',
                   optimizer = adm,
                   metrics = c('mse')
 )
-  history <- model %>% fit(
-    x_train, y_train, 
-    batch_size = batch_size,
-    epochs = epochs, 
-    verbose = 1, 
-    validation_data = list(x_test, y_test),
-    shuffle = TRUE)
+history <- model %>% fit(
+  x_train, y_train, 
+  batch_size = batch_size,
+  epochs = epochs, 
+  verbose = 1, 
+  validation_data = list(x_test, y_test),
+  shuffle = TRUE)
 
 plot(history)
 history$metrics
@@ -320,29 +322,6 @@ dim(y_test)
 dim(predicted_output)
 
 
-mape <- function(y_true, y_for){
-  len <- length(y_for)
-  mp <- 0
-  for(i in 1:len){
-    mp <- mp + abs((y_true[i]-y_for[i])/y_true[i])
-  }
-  return(mp)
-}
-
-sumMape <- 0
-is_inf <- 0
-
-
-for(i in 1:length(predicted_output[,1])){
-  ypred <- predicted_output[i , ]
-  yreal <- y_test[i , ]
-  sumMape <- sumMape + ifelse(is.infinite(mape(yreal, ypred)), 
-                              {is_inf <- is_inf +1
-                                next()},
-                              mape(yreal, ypred))
-}
-
-sumMape/(length(predicted_output[,1])-is_inf)
 
 
 ###################################################
@@ -368,10 +347,11 @@ mweights <- keras::get_weights(model)
 #build the model
 modelPredict <- keras_model_sequential()
 modelPredict %>%
-  layer_lstm(units = 100, input_shape = c( 21, 8), batch_size = 1,
+  layer_lstm(units = 100, input_shape = c( 14, 8), batch_size = 1,
              return_sequences = FALSE, stateful = FALSE) %>% 
   layer_dropout(rate = 0.5) %>%
-  layer_dense(units = 7)
+  #layer_lstm(units = 75, return_sequences = FALSE, stateful = TRUE) %>% 
+  layer_dense(units = 14)
 summary(modelPredict)
 
 #set weigths from the trained model
@@ -382,8 +362,8 @@ keras::set_weights(modelPredict, mweights)
 #Get data for a given station i_s
 #################################################################################
 
-
-i_s <- 234 # values from 1 to 448
+#30  42 117 120 121 169 190 206 209 235 247 254 261 334 339 403 417 432 433 434 442
+i_s <- 416 # values from 1 to 448
 #print(i_s)
 loop_station <- as.numeric(stations[i_s,1])
 
@@ -405,10 +385,10 @@ dtToArray <- dtToArrayFull %>%
 
 data_point <- dtToArray %>%
   ungroup()%>%
-  filter(Fecha_Retiro >= as.Date('2017-03-04') & Fecha_Retiro <= as.Date('2017-03-24')) %>%
+  filter(Fecha_Retiro >= as.Date('2017-03-04') & Fecha_Retiro <= as.Date('2017-03-17')) %>%
   select(tripsD7, weekday)
 
-predict_array <- array(data = numeric(8*21), dim = c(1, 21, 8))
+predict_array <- array(data = numeric(8*14), dim = c(1, 14, 8))
 predict_array[1 ,  , 1 ] <- dplyr::pull(data_point,tripsD7)
 predict_array[1 ,  , 2:8 ] <- week_array[ as.numeric(dplyr::pull(data_point,weekday)), ]
 
@@ -419,7 +399,7 @@ predicted_output <- modelPredict %>%
 
 d_to_complete <- dtToArray %>%
   ungroup()%>%
-  filter(Fecha_Retiro >= as.Date('2017-01-01') & Fecha_Retiro <= as.Date('2017-03-24')) %>%
+  filter(Fecha_Retiro >= as.Date('2017-01-01') & Fecha_Retiro <= as.Date('2017-03-17')) %>%
   select(tripsD7)
 
 real <- na.exclude(dtToArray$tripsD7)[1:length(na.exclude(dtToArray$tripsD7))]
@@ -434,7 +414,7 @@ real <- exp(real)-1
 pred <- exp(pred)-1
 
 
-print(paste(i_s,forecast::accuracy(real[84:90],pred[84:90])[5]))
+print(paste(i_s,forecast::accuracy(real[77:90],pred[77:90])[5]))
 
 plotfun <- as.data.frame(
   cbind(ts = dtToArray$Fecha_Retiro,
